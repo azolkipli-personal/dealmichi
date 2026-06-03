@@ -8,6 +8,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icons/icon-192.png" sizes="192x192">
 <script src="https://cdn.jsdelivr.net/npm/dexie@4/dist/dexie.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <title>BerKanban</title>
 <style>
 /* ── CSS Variables (Dark = default) ──────────────────────────── */
@@ -276,6 +277,9 @@ body {
   font-size: 0.78em; color: var(--text-muted);
 }
 .card .meta > span { display: flex; align-items: center; gap: 3px; }
+.card .tags { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
+.tag-badge { padding:1px 7px; border-radius:4px; font-size:0.75em; background:var(--accent); opacity:0.8; color:#fff; }
+.drop-indicator { height: 3px; background: var(--accent); border-radius: 2px; margin: 4px 0; }
 .card .value-badge {
   font-weight: 600;
   padding: 1px 6px;
@@ -380,6 +384,20 @@ body {
 }
 @keyframes toastIn { from { opacity:0; transform:translateX(-50%) translateY(20px); } to { opacity:1; transform:translateX(-50%) translateY(0); } }
 
+/* ── Markdown Preview ──────────────────────────────────────── */
+.md-preview {
+  width:100%; min-height:120px; padding:8px 10px;
+  border:1px solid var(--border); border-radius:var(--radius-sm);
+  background:var(--bg); overflow-y:auto; line-height:1.6; font-size:0.9em;
+}
+.md-preview h1,.md-preview h2,.md-preview h3 { margin:8px 0 4px; }
+.md-preview ul,.md-preview ol { padding-left:20px; margin:4px 0; }
+.md-preview code { background:var(--surface); padding:1px 5px; border-radius:3px; font-size:0.85em; }
+.md-preview pre { background:var(--surface); padding:10px; border-radius:6px; overflow-x:auto; }
+.md-preview a { color:var(--accent); }
+.md-preview strong { font-weight:600; }
+.md-preview em { font-style:italic; }
+
 /* ── Responsive ──────────────────────────────────────────────── */
 @media (max-width: 768px) {
   .header { padding: 10px 12px; gap: 8px; }
@@ -418,6 +436,7 @@ body {
   <div class="search-wrap"><input type="search" id="searchInput" placeholder="Cari deal..." autocomplete="off"></div>
   <button class="header-btn icon-btn" id="themeToggle" title="Tukar tema">🌓</button>
   <button class="header-btn icon-btn" id="welcomeBtn" title="Cara guna">❓</button>
+  <select id="tagFilter" class="header-btn" style="font-size:0.8em;padding:6px 6px;max-width:120px"><option value="">All tags</option></select>
   <button class="header-btn" id="exportBtn"><span>📤</span><span class="label"> Export</span></button>
   <button class="header-btn" id="importBtn"><span>📥</span><span class="label"> Import</span></button>
   <button class="header-btn primary" id="addDealBtn"><span>＋</span><span class="label"> New Deal</span></button>
@@ -487,11 +506,16 @@ body {
       <label for="dealSummary">Summary</label>
       <textarea id="dealSummary" placeholder="Brief description of the deal..."></textarea>
 
-      <label for="dealNotes">Notes &amp; Activity Log</label>
+      <label for="dealTags">Tags</label>
+      <input type="text" id="dealTags" placeholder="e.g. web, enterprise (comma-separated)">
+
+      <label for="dealNotes">Notes &amp; Activity Log <button id="mdToggle" class="header-btn icon-btn" style="float:right;padding:2px 8px;font-size:0.9em">👁️ Preview</button></label>
       <textarea id="dealNotes" placeholder="Markdown notes, activity log, etc." style="min-height:120px"></textarea>
+      <div id="mdPreview" class="md-preview" style="display:none"></div>
     </div>
     <div class="modal-footer">
       <button id="modalDelete" class="danger" style="display:none">🗑 Delete</button>
+      <button id="modalExportMd" class="header-btn" style="display:none">📄 .md</button>
       <div style="flex:1"></div>
       <button id="modalCancel">Cancel</button>
       <button id="modalSave" class="primary">💾 Save</button>
@@ -551,6 +575,14 @@ const db = new Dexie('BerKanban');
 db.version(1).stores({
   deals: '++id, name, status, client, created'
 });
+db.version(2).stores({
+  deals: '++id, name, status, client, created, *tags'
+}).upgrade(tx => {
+  return tx.table('deals').toCollection().modify(deal => {
+    deal.tags = deal.tags || [];
+    deal.sortOrder = deal.sortOrder || 0;
+  });
+});
 
 // ══════════════════════════════════════════════════════════════
 //  State
@@ -563,19 +595,43 @@ const STATUS_LABELS = { active: 'Active', closing: 'Closing', won: 'Won', lost: 
 const STATUS_ICONS = { active: '🔄', closing: '📈', won: '✅', lost: '❌' };
 
 // ══════════════════════════════════════════════════════════════
-//  Theme
+//  Theme — Auto/Dark/Light with system preference detection
 // ══════════════════════════════════════════════════════════════
 function loadTheme() {
-  const saved = localStorage.getItem('berkanban-theme');
-  if (saved) document.documentElement.setAttribute('data-theme', saved);
+  const mode = localStorage.getItem('berkanban-theme-mode') || 'auto';
+  applyTheme(mode);
+  const mq = window.matchMedia('(prefers-color-scheme: dark)');
+  mq.removeEventListener('change', onSystemThemeChange);
+  mq.addEventListener('change', onSystemThemeChange);
+}
+function onSystemThemeChange() {
+  const mode = localStorage.getItem('berkanban-theme-mode') || 'auto';
+  if (mode === 'auto') applyTheme('auto');
+}
+function applyTheme(mode) {
+  let theme;
+  if (mode === 'auto') {
+    theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  } else {
+    theme = mode;
+  }
+  document.documentElement.setAttribute('data-theme', theme);
+  document.querySelector('meta[name="theme-color"]').content =
+    theme === 'dark' ? '#0d1117' : '#ffffff';
+  const btn = document.getElementById('themeToggle');
+  if (!btn) return;
+  if (mode === 'auto') btn.textContent = '🌓';
+  else if (mode === 'dark') btn.textContent = '🌙';
+  else btn.textContent = '☀️';
 }
 function toggleTheme() {
-  const cur = document.documentElement.getAttribute('data-theme');
-  const next = cur === 'dark' ? 'light' : 'dark';
-  document.documentElement.setAttribute('data-theme', next);
-  localStorage.setItem('berkanban-theme', next);
-  document.querySelector('meta[name="theme-color"]').content =
-    next === 'dark' ? '#0d1117' : '#ffffff';
+  const cur = localStorage.getItem('berkanban-theme-mode') || 'auto';
+  let next;
+  if (cur === 'auto') next = 'dark';
+  else if (cur === 'dark') next = 'light';
+  else next = 'auto';
+  localStorage.setItem('berkanban-theme-mode', next);
+  applyTheme(next);
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -583,10 +639,26 @@ function toggleTheme() {
 // ══════════════════════════════════════════════════════════════
 async function loadDeals() {
   deals = await db.deals.orderBy('created').reverse().toArray();
+  populateTagFilter();
   renderBoard();
 }
 
+function logActivity(dealOrNotes, action, detail) {
+  const now = new Date();
+  const ts = now.toISOString().slice(0, 10) + ' ' + now.toTimeString().slice(0, 5);
+  const entry = `\n### ${ts}\n- **${action}**: ${detail}`;
+  if (typeof dealOrNotes === 'string' || typeof dealOrNotes === 'undefined') {
+    // Return the log entry for prepending to notes string
+    return entry;
+  }
+  // Append to deal object's notes
+  dealOrNotes.notes = (dealOrNotes.notes || '') + entry;
+}
+
 async function createDeal(data) {
+  const now = new Date();
+  const ts = now.toISOString().slice(0, 10) + ' ' + now.toTimeString().slice(0, 5);
+  const logEntry = `\n### ${ts}\n- **created**: Deal created`;
   const deal = {
     name: data.name.trim(),
     client: (data.client || '').trim(),
@@ -595,9 +667,10 @@ async function createDeal(data) {
     probability: parseInt(data.prob) || 0,
     expectedClose: data.close || '',
     summary: data.summary || '',
-    notes: data.notes || '',
-    created: new Date().toISOString().slice(0, 10),
-    updated: new Date().toISOString()
+    tags: data.tags || [],
+    notes: (data.notes || '') + logEntry,
+    created: now.toISOString().slice(0, 10),
+    updated: now.toISOString()
   };
   await db.deals.add(deal);
   await loadDeals();
@@ -605,6 +678,9 @@ async function createDeal(data) {
 }
 
 async function updateDeal(id, data) {
+  const now = new Date();
+  const ts = now.toISOString().slice(0, 10) + ' ' + now.toTimeString().slice(0, 5);
+  const logEntry = `\n### ${ts}\n- **edited**: ${data.name.trim()}`;
   const updates = {
     name: data.name.trim(),
     client: (data.client || '').trim(),
@@ -612,8 +688,9 @@ async function updateDeal(id, data) {
     probability: parseInt(data.prob) || 0,
     expectedClose: data.close || '',
     summary: data.summary || '',
-    notes: data.notes || '',
-    updated: new Date().toISOString()
+    tags: data.tags || [],
+    notes: (data.notes || '') + logEntry,
+    updated: now.toISOString()
   };
   await db.deals.update(id, updates);
   await loadDeals();
@@ -649,7 +726,15 @@ async function deleteDeal(id) {
 }
 
 async function moveDeal(id, newStatus) {
-  await db.deals.update(id, { status: newStatus, updated: new Date().toISOString() });
+  const deal = deals.find(d => d.id === id);
+  const oldLabel = deal ? STATUS_LABELS[deal.status] || deal.status : '?';
+  const newLabel = STATUS_LABELS[newStatus] || newStatus;
+  const now = new Date();
+  const ts = now.toISOString().slice(0, 10) + ' ' + now.toTimeString().slice(0, 5);
+  const logEntry = `\n### ${ts}\n- **status changed**: ${oldLabel} → ${newLabel}`;
+  const dealData = deal || {};
+  const updatedNotes = (dealData.notes || '') + logEntry;
+  await db.deals.update(id, { status: newStatus, notes: updatedNotes, updated: now.toISOString() });
   await loadDeals();
 }
 
@@ -657,10 +742,13 @@ async function moveDeal(id, newStatus) {
 //  Render
 // ══════════════════════════════════════════════════════════════
 function renderBoard(filter) {
+  const tagVal = document.getElementById('tagFilter')?.value || '';
   for (const status of STATUSES) {
     const col = document.getElementById(`col-${status}`);
     const count = document.getElementById(`count-${status}`);
     let items = deals.filter(d => d.status === status);
+    // Sort by sortOrder for reorder support
+    items.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
     if (filter) {
       const f = filter.toLowerCase();
       items = items.filter(d =>
@@ -669,10 +757,13 @@ function renderBoard(filter) {
         (d.summary || '').toLowerCase().includes(f)
       );
     }
+    if (tagVal) {
+      items = items.filter(d => (d.tags || []).some(t => t.toLowerCase() === tagVal.toLowerCase()));
+    }
     count.textContent = items.length;
 
     if (items.length === 0) {
-      col.innerHTML = `<div class="empty-col">${filter ? 'No matches' : 'No deals — tap ＋'}</div>`;
+      col.innerHTML = `<div class="empty-col">${filter || tagVal ? 'No matches' : 'No deals — tap ＋'}</div>`;
       continue;
     }
 
@@ -709,6 +800,7 @@ function renderCard(d) {
         <span>${d.probability}%</span>
       </div>
       <div class="prob-bar"><div class="prob-fill" style="width:${d.probability}%;background:${probColor}"></div></div>
+      ${d.tags?.length ? `<div class="tags">${d.tags.map(t => `<span class="tag-badge">${esc(t)}</span>`).join('')}</div>` : ''}
     </div>
   `;
 }
@@ -717,6 +809,22 @@ function esc(s) {
   const d = document.createElement('div');
   d.textContent = s || '';
   return d.innerHTML;
+}
+
+function populateTagFilter() {
+  const select = document.getElementById('tagFilter');
+  if (!select) return;
+  const currentVal = select.value;
+  const allTags = new Set();
+  deals.forEach(d => (d.tags || []).forEach(t => allTags.add(t)));
+  select.innerHTML = '<option value="">All tags</option>';
+  [...allTags].sort().forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t;
+    opt.textContent = t;
+    if (t === currentVal) opt.selected = true;
+    select.appendChild(opt);
+  });
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -758,11 +866,51 @@ function onDrop(e) {
   const newStatus = e.currentTarget.closest('.column').dataset.status;
   if (draggedId) {
     const deal = deals.find(d => d.id === draggedId);
-    if (deal && deal.status !== newStatus) {
-      moveDeal(draggedId, newStatus);
+    if (deal) {
+      if (deal.status !== newStatus) {
+        // Move to different column
+        moveDeal(draggedId, newStatus);
+      } else {
+        // Same-column reorder
+        const y = e.clientY;
+        const idx = getInsertIndex(e.currentTarget, y);
+        const cardsInCol = deals.filter(d => d.status === newStatus && d.id !== draggedId)
+          .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+        cardsInCol.splice(idx, 0, deal);
+        cardsInCol.forEach((d, i) => {
+          d.sortOrder = (i + 1) * 1000;
+          db.deals.update(d.id, { sortOrder: d.sortOrder });
+        });
+        updateColumnOrder(newStatus);
+        loadDeals();
+      }
     }
   }
   draggedId = null;
+}
+
+function getInsertIndex(columnBody, y) {
+  const cards = columnBody.querySelectorAll('.card');
+  let idx = cards.length;
+  cards.forEach((card, i) => {
+    const rect = card.getBoundingClientRect();
+    if (y < rect.top + rect.height / 2) {
+      if (i < idx) idx = i;
+    }
+  });
+  return idx;
+}
+
+function updateColumnOrder(status) {
+  const dealsInCol = deals.filter(d => d.status === status)
+    .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+  dealsInCol.forEach((d, i) => {
+    const newOrder = (i + 1) * 1000;
+    if (d.sortOrder !== newOrder) {
+      d.sortOrder = newOrder;
+      db.deals.update(d.id, { sortOrder: newOrder });
+    }
+  });
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -858,8 +1006,26 @@ function onDrop(e) {
         if (col) {
           const newStatus = col.dataset.status;
           const deal = deals.find(d => d.id === dragState.id);
-          if (deal && deal.status !== newStatus) {
-            moveDeal(dragState.id, newStatus);
+          if (deal) {
+            if (deal.status !== newStatus) {
+              moveDeal(dragState.id, newStatus);
+            } else {
+              // Same-column reorder on touch
+              const body = col.querySelector('.column-body');
+              if (body) {
+                const y = t.clientY;
+                const idx = getInsertIndex(body, y);
+                const cardsInCol = deals.filter(d => d.status === newStatus && d.id !== dragState.id)
+                  .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+                cardsInCol.splice(idx, 0, deal);
+                cardsInCol.forEach((d, i) => {
+                  d.sortOrder = (i + 1) * 1000;
+                  db.deals.update(d.id, { sortOrder: d.sortOrder });
+                });
+                updateColumnOrder(newStatus);
+                loadDeals();
+              }
+            }
           }
         }
       }
@@ -909,8 +1075,13 @@ function openAddModal() {
   document.getElementById('dealProb').value = '50';
   document.getElementById('dealClose').value = '';
   document.getElementById('dealSummary').value = '';
+  document.getElementById('dealTags').value = '';
   document.getElementById('dealNotes').value = '';
+  document.getElementById('mdPreview').style.display = 'none';
+  document.getElementById('dealNotes').style.display = '';
+  document.getElementById('mdToggle').textContent = '👁️ Preview';
   document.getElementById('modalDelete').style.display = 'none';
+  document.getElementById('modalExportMd').style.display = 'none';
   document.getElementById('dealModal').classList.add('open');
   setTimeout(() => document.getElementById('dealName').focus(), 100);
 }
@@ -926,8 +1097,13 @@ function openEditModal(id) {
   document.getElementById('dealProb').value = deal.probability || '0';
   document.getElementById('dealClose').value = deal.expectedClose || '';
   document.getElementById('dealSummary').value = deal.summary || '';
+  document.getElementById('dealTags').value = (deal.tags || []).join(', ');
   document.getElementById('dealNotes').value = deal.notes || '';
+  document.getElementById('mdPreview').style.display = 'none';
+  document.getElementById('dealNotes').style.display = '';
+  document.getElementById('mdToggle').textContent = '👁️ Preview';
   document.getElementById('modalDelete').style.display = '';
+  document.getElementById('modalExportMd').style.display = '';
   document.getElementById('dealModal').classList.add('open');
 }
 
@@ -937,6 +1113,8 @@ function closeModal() {
 }
 
 function getFormData() {
+  const tagsRaw = document.getElementById('dealTags').value;
+  const tags = tagsRaw.split(',').map(t => t.trim()).filter(Boolean);
   return {
     name: document.getElementById('dealName').value,
     client: document.getElementById('dealClient').value,
@@ -944,6 +1122,7 @@ function getFormData() {
     prob: document.getElementById('dealProb').value,
     close: document.getElementById('dealClose').value,
     summary: document.getElementById('dealSummary').value,
+    tags: tags,
     notes: document.getElementById('dealNotes').value,
   };
 }
@@ -1000,6 +1179,8 @@ async function importDeals(file) {
         probability: parseInt(deal.probability) || 0,
         expectedClose: deal.expectedClose || '',
         summary: deal.summary || '',
+        tags: deal.tags || [],
+        sortOrder: deal.sortOrder || 0,
         notes: deal.notes || '',
         created: deal.created || new Date().toISOString().slice(0, 10),
         updated: new Date().toISOString()
@@ -1013,6 +1194,21 @@ async function importDeals(file) {
     toast('❌ Import failed: invalid file');
     console.error(e);
   }
+}
+
+function exportDealAsMD(id) {
+  const deal = deals.find(d => d.id === id);
+  if (!deal) return;
+  const md = `# Deal: ${deal.name}\n\n**Client:** ${deal.client || '—'}\n**Status:** ${STATUS_LABELS[deal.status] || deal.status}\n**Value:** ${deal.value || '—'}\n**Probability:** ${deal.probability}%\n**Expected Close:** ${deal.expectedClose || '—'}\n\n## Summary\n${deal.summary || '—'}\n\n## Notes & Activity\n${deal.notes || '—'}`;
+  const blob = new Blob([md], { type: 'text/markdown' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const slug = deal.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'deal';
+  a.href = url;
+  a.download = `${slug}.md`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('📄 Deal exported as .md');
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1201,6 +1397,28 @@ function renderWelcome(lang) {
     document.getElementById('confirmModal').classList.add('open');
   });
 
+  // Markdown preview toggle
+  document.getElementById('mdToggle').addEventListener('click', () => {
+    const textarea = document.getElementById('dealNotes');
+    const preview = document.getElementById('mdPreview');
+    const btn = document.getElementById('mdToggle');
+    if (preview.style.display === 'none') {
+      preview.innerHTML = marked.parse(textarea.value || '');
+      preview.style.display = 'block';
+      textarea.style.display = 'none';
+      btn.textContent = '✏️ Edit';
+    } else {
+      textarea.style.display = '';
+      preview.style.display = 'none';
+      btn.textContent = '👁️ Preview';
+    }
+  });
+
+  // Export single deal as .md
+  document.getElementById('modalExportMd').addEventListener('click', () => {
+    if (editingId) exportDealAsMD(editingId);
+  });
+
   document.getElementById('confirmClose').addEventListener('click', () =>
     document.getElementById('confirmModal').classList.remove('open'));
   document.getElementById('confirmCancel').addEventListener('click', () =>
@@ -1212,6 +1430,10 @@ function renderWelcome(lang) {
   });
 
   document.getElementById('exportBtn').addEventListener('click', exportDeals);
+
+  document.getElementById('tagFilter').addEventListener('change', () => {
+    renderBoard(document.getElementById('searchInput').value);
+  });
 
   document.getElementById('importBtn').addEventListener('click', () => {
     document.getElementById('importModal').classList.add('open');
