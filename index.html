@@ -127,6 +127,52 @@ body {
 .header-btn.primary:hover { background: var(--accent-hover); }
 .header-btn.icon-btn { padding: 6px 8px; min-width: 34px; justify-content: center; }
 
+/* ── Dashboard Stats ──────────────────────────────────────────── */
+.stats-bar {
+  display: flex; gap: 1px; padding: 12px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.stat-item {
+  flex: 1; min-width: 100px;
+  padding: 8px 12px;
+  text-align: center;
+}
+.stat-item .stat-value {
+  font-size: 1.3em; font-weight: 700;
+}
+.stat-item .stat-label {
+  font-size: 0.75em; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.3px;
+  margin-top: 2px;
+}
+@media (max-width: 768px) {
+  .stats-bar { padding: 8px 12px; gap: 0; }
+  .stat-item { min-width: 80px; padding: 6px 8px; }
+  .stat-item .stat-value { font-size: 1.1em; }
+}
+
+/* ── Mobile Drag Clone ──────────────────────────────────────────── */
+.drag-clone {
+  position: fixed; z-index: 500;
+  pointer-events: none;
+  transform: scale(1.05) rotate(2deg);
+  opacity: 0.9;
+  width: 260px;
+  transition: none;
+  filter: drop-shadow(0 8px 24px rgba(0,0,0,0.4));
+}
+.card.dragging-touch {
+  opacity: 0.3;
+}
+.col-highlight {
+  background: var(--accent);
+  opacity: 0.08;
+  border-radius: var(--radius-sm);
+}
+
 /* ── Board ──────────────────────────────────────────────────── */
 .board {
   display: flex; gap: 12px; padding: 16px;
@@ -336,6 +382,14 @@ body {
   <button class="header-btn primary" id="addDealBtn"><span>＋</span><span class="label"> New Deal</span></button>
 </header>
 
+<!-- ── Stats Bar ──────────────────────────────────────────── -->
+<div class="stats-bar" id="statsBar">
+  <div class="stat-item"><div class="stat-value" id="statTotal">$0</div><div class="stat-label">Total Pipeline</div></div>
+  <div class="stat-item"><div class="stat-value" id="statWinRate">0%</div><div class="stat-label">Win Rate</div></div>
+  <div class="stat-item"><div class="stat-value" id="statAvgDeal">$0</div><div class="stat-label">Avg Deal</div></div>
+  <div class="stat-item"><div class="stat-value" id="statActive">0</div><div class="stat-label">Active</div></div>
+</div>
+
 <!-- ── Board ─────────────────────────────────────────────────── -->
 <div class="board" id="board">
   <div class="column" data-status="active">
@@ -519,9 +573,31 @@ async function updateDeal(id, data) {
 }
 
 async function deleteDeal(id) {
-  await db.deals.delete(id);
-  await loadDeals();
-  toast('🗑 Deal deleted');
+  const deal = deals.find(d => d.id === id);
+  // Show undo toast
+  const toastEl = document.createElement('div');
+  toastEl.className = 'toast';
+  toastEl.style.display = 'flex';
+  toastEl.style.alignItems = 'center';
+  toastEl.style.gap = '12px';
+  toastEl.innerHTML = '<span>🗑 Deleted</span><button style="background:var(--accent);color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:0.85em;font-weight:600;cursor:pointer">Undo</button>';
+  document.body.appendChild(toastEl);
+  // Remove from display immediately
+  deals = deals.filter(d => d.id !== id);
+  renderBoard();
+  // Timeout: actually delete from DB
+  const timeout = setTimeout(async () => {
+    toastEl.remove();
+    await db.deals.delete(id);
+    // Don't reload — already removed from display
+  }, 5000);
+  // Undo button: cancel deletion
+  toastEl.querySelector('button').addEventListener('click', async () => {
+    clearTimeout(timeout);
+    toastEl.remove();
+    await loadDeals();
+    toast('↩️ Restored');
+  });
 }
 
 async function moveDeal(id, newStatus) {
@@ -554,6 +630,9 @@ function renderBoard(filter) {
 
     col.innerHTML = items.map(d => renderCard(d)).join('');
   }
+
+  // Update stats bar
+  updateStats(filter);
 
   // Attach drag events
   document.querySelectorAll('.card').forEach(el => {
@@ -639,41 +718,135 @@ function onDrop(e) {
 }
 
 // ══════════════════════════════════════════════════════════════
-//  Touch drag support (for mobile)
+//  Touch drag & drop (mobile)
 // ══════════════════════════════════════════════════════════════
+// Long-press a card to enter drag mode, then drag to another column.
+// Double-tap still cycles status as a quick alternative.
 (function() {
-  let touchDragId = null, touchClone = null, touchStartY = 0, touchStartX = 0;
+  let dragState = null;
+
+  const LONG_PRESS_MS = 350;
+
+  function getColumnUnder(x, y) {
+    const el = document.elementFromPoint(x, y);
+    if (!el) return null;
+    return el.closest('[data-status]');
+  }
+
+  function createClone(card) {
+    const clone = card.cloneNode(true);
+    clone.classList.add('drag-clone');
+    const rect = card.getBoundingClientRect();
+    clone.style.width = rect.width + 'px';
+    clone.style.left = rect.left + 'px';
+    clone.style.top = rect.top + 'px';
+    clone.style.height = rect.height + 'px';
+    document.body.appendChild(clone);
+    return clone;
+  }
 
   document.addEventListener('touchstart', e => {
     const card = e.target.closest('.card');
-    if (!card) return;
-    // Only start drag if it's a long-press
-    touchStartY = e.touches[0].clientY;
-    touchStartX = e.touches[0].clientX;
+    if (!card || card.closest('.modal-overlay')) return;
+    const t = e.touches[0];
+    dragState = {
+      id: parseInt(card.dataset.id),
+      el: card,
+      clone: null,
+      startX: t.clientX,
+      startY: t.clientY,
+      moved: false,
+      longPress: false,
+      timer: setTimeout(() => {
+        dragState.longPress = true;
+        dragState.clone = createClone(card);
+        card.classList.add('dragging-touch');
+        if (navigator.vibrate) navigator.vibrate(15);
+      }, LONG_PRESS_MS)
+    };
   }, { passive: true });
 
   document.addEventListener('touchmove', e => {
-    const card = e.target.closest('.card');
-    if (!card || touchDragId) return;
-    const dy = Math.abs(e.touches[0].clientY - touchStartY);
-    const dx = Math.abs(e.touches[0].clientX - touchStartX);
-    if (dy > 20 || dx > 20) return; // scrolling — not a drag
-    // Long press threshold
+    if (!dragState || dragState.clone) return;
+    const t = e.touches[0];
+    const dx = Math.abs(t.clientX - dragState.startX);
+    const dy = Math.abs(t.clientY - dragState.startY);
+    if (dx > 10 || dy > 10) {
+      clearTimeout(dragState.timer);
+      dragState = null;
+    }
   }, { passive: true });
 
-  // Fallback: use a simple status picker on mobile via double-tap
-  document.addEventListener('dblclick', e => {
+  document.addEventListener('touchmove', e => {
+    if (!dragState || !dragState.longPress || !dragState.clone) return;
+    e.preventDefault();
+    const t = e.touches[0];
+    dragState.clone.style.left = (t.clientX - dragState.clone.offsetWidth / 2) + 'px';
+    dragState.clone.style.top = (t.clientY - dragState.clone.offsetHeight / 2) + 'px';
+    dragState.moved = true;
+
+    document.querySelectorAll('.col-highlight').forEach(el => el.classList.remove('col-highlight'));
+    const col = getColumnUnder(t.clientX, t.clientY);
+    if (col) {
+      const body = col.querySelector('.column-body');
+      if (body && col.dataset.status !== dragState.el.dataset.status) {
+        body.classList.add('col-highlight');
+      }
+    }
+  }, { passive: false });
+
+  document.addEventListener('touchend', e => {
+    if (!dragState) return;
+    clearTimeout(dragState.timer);
+
+    if (dragState.longPress && dragState.clone) {
+      dragState.clone.remove();
+      dragState.el.classList.remove('dragging-touch');
+      document.querySelectorAll('.col-highlight').forEach(el => el.classList.remove('col-highlight'));
+
+      if (dragState.moved && dragState.id) {
+        const t = e.changedTouches[0];
+        const col = getColumnUnder(t.clientX, t.clientY);
+        if (col) {
+          const newStatus = col.dataset.status;
+          const deal = deals.find(d => d.id === dragState.id);
+          if (deal && deal.status !== newStatus) {
+            moveDeal(dragState.id, newStatus);
+          }
+        }
+      }
+    }
+
+    if (!dragState.longPress && !dragState.moved) {
+      if (dragState.id) {
+        document.querySelectorAll('.card').forEach(c => {
+          if (parseInt(c.dataset.id) === dragState.id) c.click();
+        });
+      }
+    }
+
+    dragState = null;
+  }, { passive: true });
+
+  // Double-tap cycles status
+  let lastTap = 0;
+  document.addEventListener('touchend', e => {
     const card = e.target.closest('.card');
     if (!card) return;
-    const id = parseInt(card.dataset.id);
-    const deal = deals.find(d => d.id === id);
-    if (!deal) return;
-    // Cycle through statuses on double-tap
-    const idx = STATUSES.indexOf(deal.status);
-    const nextStatus = STATUSES[(idx + 1) % STATUSES.length];
-    moveDeal(id, nextStatus);
-    toast(`Moved to ${STATUS_LABELS[nextStatus]}`);
-  });
+    const now = Date.now();
+    if (now - lastTap < 400) {
+      const id = parseInt(card.dataset.id);
+      const deal = deals.find(d => d.id === id);
+      if (deal) {
+        e.preventDefault();
+        const idx = STATUSES.indexOf(deal.status);
+        const nextStatus = STATUSES[(idx + 1) % STATUSES.length];
+        moveDeal(id, nextStatus);
+        toast(`Moved to ${STATUS_LABELS[nextStatus]}`);
+      }
+    }
+    lastTap = now;
+  }, { passive: true });
 })();
 
 // ══════════════════════════════════════════════════════════════
@@ -803,6 +976,54 @@ function toast(msg) {
   el.textContent = msg;
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 2500);
+}
+
+// ══════════════════════════════════════════════════════════════
+//  Dashboard Stats
+// ══════════════════════════════════════════════════════════════
+function updateStats(filter) {
+  let active = deals.filter(d => d.status === 'active');
+  let closing = deals.filter(d => d.status === 'closing');
+  let won = deals.filter(d => d.status === 'won');
+  let lost = deals.filter(d => d.status === 'lost');
+
+  if (filter) {
+    const f = filter.toLowerCase();
+    const fn = d => d.name.toLowerCase().includes(f) || (d.client||'').toLowerCase().includes(f);
+    active = active.filter(fn);
+    closing = closing.filter(fn);
+    won = won.filter(fn);
+    lost = lost.filter(fn);
+  }
+
+  function parseValue(v) {
+    if (!v) return 0;
+    const s = String(v).replace(/[$,]/g, '');
+    const num = parseFloat(s);
+    if (isNaN(num)) return 0;
+    if (/[kK]/.test(v)) return num * 1000;
+    if (/[mM]/.test(v)) return num * 1000000;
+    return num;
+  }
+
+  function fmt(n) {
+    if (n >= 1000000) return '$' + (n / 1000000).toFixed(1) + 'M';
+    if (n >= 1000) return '$' + (n / 1000).toFixed(1) + 'K';
+    return '$' + Math.round(n);
+  }
+
+  const pipeValues = [...active, ...closing].map(d => parseValue(d.value));
+  const totalPipeline = pipeValues.reduce((a, b) => a + b, 0);
+  const wonCount = won.length;
+  const lostCount = lost.length;
+  const winRate = (wonCount + lostCount) > 0 ? Math.round(wonCount / (wonCount + lostCount) * 100) : 0;
+  const allValues = deals.map(d => parseValue(d.value)).filter(v => v > 0);
+  const avgDeal = allValues.length > 0 ? allValues.reduce((a, b) => a + b, 0) / allValues.length : 0;
+
+  document.getElementById('statTotal').textContent = totalPipeline > 0 ? fmt(totalPipeline) : '$0';
+  document.getElementById('statWinRate').textContent = winRate + '%';
+  document.getElementById('statAvgDeal').textContent = avgDeal > 0 ? fmt(avgDeal) : '$0';
+  document.getElementById('statActive').textContent = active.length + closing.length;
 }
 
 // ══════════════════════════════════════════════════════════════
