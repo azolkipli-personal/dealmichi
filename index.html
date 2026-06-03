@@ -1,0 +1,899 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta name="theme-color" content="#0d1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png" sizes="192x192">
+<script src="https://cdn.jsdelivr.net/npm/dexie@4/dist/dexie.min.js"></script>
+<title>BerKanban</title>
+<style>
+/* ── CSS Variables (Dark = default) ──────────────────────────── */
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface-hover: #1c2333;
+  --border: #30363d;
+  --text: #e6edf3;
+  --text-muted: #8b949e;
+  --accent: #58a6ff;
+  --accent-hover: #79c0ff;
+  --green: #3fb950;
+  --orange: #d2991d;
+  --red: #f85149;
+  --purple: #a371f7;
+  --column-bg: #0d1117;
+  --card-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  --modal-overlay: rgba(0,0,0,0.7);
+  --scrollbar: #30363d;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif;
+}
+
+[data-theme="light"] {
+  --bg: #f6f8fa;
+  --surface: #ffffff;
+  --surface-hover: #f3f4f6;
+  --border: #d0d7de;
+  --text: #1f2328;
+  --text-muted: #656d76;
+  --accent: #0969da;
+  --accent-hover: #0550ae;
+  --green: #1a7f37;
+  --orange: #9a6700;
+  --red: #cf222e;
+  --purple: #8250df;
+  --column-bg: #f6f8fa;
+  --card-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  --modal-overlay: rgba(0,0,0,0.4);
+  --scrollbar: #d0d7de;
+}
+
+/* ── Reset & Base ────────────────────────────────────────────── */
+*,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-tap-highlight-color: transparent; }
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  overflow-x: hidden;
+  min-height: 100dvh;
+  transition: background .2s, color .2s;
+}
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 3px; }
+
+/* ── Header ─────────────────────────────────────────────────── */
+.header {
+  position: sticky; top: 0; z-index: 100;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 16px;
+  display: flex; align-items: center; gap: 10px;
+  flex-wrap: wrap;
+}
+.header-title {
+  font-size: 1.15em; font-weight: 700;
+  white-space: nowrap;
+  display: flex; align-items: center; gap: 8px;
+}
+.header-title span { color: var(--accent); }
+.header-spacer { flex: 1; min-width: 8px; }
+
+/* Search */
+.search-wrap {
+  position: relative; flex: 1; min-width: 140px; max-width: 320px;
+}
+.search-wrap input {
+  width: 100%;
+  padding: 7px 12px 7px 32px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.875em;
+  outline: none;
+  transition: border .15s;
+}
+.search-wrap input:focus { border-color: var(--accent); }
+.search-wrap::before {
+  content: '🔍';
+  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  font-size: 0.8em; opacity: 0.5;
+}
+
+/* Header buttons */
+.header-btn {
+  background: none; border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  padding: 6px 10px;
+  font-size: 0.875em;
+  cursor: pointer;
+  display: flex; align-items: center; gap: 5px;
+  white-space: nowrap;
+  transition: background .15s, border .15s;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.header-btn:hover, .header-btn:focus-visible { background: var(--surface-hover); border-color: var(--accent); }
+.header-btn.primary {
+  background: var(--accent); color: #fff; border-color: var(--accent);
+}
+.header-btn.primary:hover { background: var(--accent-hover); }
+.header-btn.icon-btn { padding: 6px 8px; min-width: 34px; justify-content: center; }
+
+/* ── Board ──────────────────────────────────────────────────── */
+.board {
+  display: flex; gap: 12px; padding: 16px;
+  overflow-x: auto; overflow-y: hidden;
+  min-height: calc(100dvh - 64px);
+  align-items: flex-start;
+}
+.column {
+  min-width: 260px; max-width: 320px;
+  flex: 1;
+  background: var(--column-bg);
+  border-radius: var(--radius);
+  display: flex; flex-direction: column;
+}
+.column-header {
+  padding: 8px 12px;
+  font-weight: 600; font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.5px;
+  display: flex; align-items: center; gap: 8px;
+  color: var(--text-muted);
+  position: sticky; top: 0; z-index: 1;
+}
+.column-count {
+  background: var(--surface);
+  border-radius: 10px;
+  padding: 0 8px; font-size: 0.8em;
+  color: var(--text-muted);
+}
+.column-body {
+  padding: 4px 8px 8px;
+  min-height: 60px;
+  flex: 1;
+}
+
+/* ── Cards ───────────────────────────────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  box-shadow: var(--card-shadow);
+  transition: box-shadow .15s, transform .15s, border-color .15s;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  position: relative;
+}
+.card:hover { border-color: var(--accent); box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+.card.dragging {
+  opacity: 0.5;
+  transform: rotate(2deg);
+}
+.card.drag-over {
+  border-color: var(--accent);
+  border-style: dashed;
+}
+.card .name { font-weight: 600; font-size: 0.95em; margin-bottom: 4px; }
+.card .client { font-size: 0.8em; color: var(--text-muted); margin-bottom: 6px; }
+.card .meta {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  font-size: 0.78em; color: var(--text-muted);
+}
+.card .meta > span { display: flex; align-items: center; gap: 3px; }
+.card .value-badge {
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.85em;
+}
+.card .prob-bar {
+  height: 3px; border-radius: 2px; margin-top: 8px; background: var(--border);
+  overflow: hidden;
+}
+.card .prob-fill { height: 100%; border-radius: 2px; transition: width .3s; }
+
+/* ── Empty state ─────────────────────────────────────────────── */
+.empty-col {
+  padding: 24px 12px; text-align: center;
+  color: var(--text-muted); font-size: 0.85em;
+}
+
+/* ── Modal ───────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  background: var(--modal-overlay);
+  display: none; align-items: center; justify-content: center;
+  padding: 16px;
+  backdrop-filter: blur(2px);
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  width: 100%; max-width: 520px;
+  max-height: 90dvh;
+  display: flex; flex-direction: column;
+  animation: modalIn .2s ease-out;
+}
+@keyframes modalIn { from { opacity:0; transform:translateY(20px) scale(0.97); } to { opacity:1; transform:translateY(0) scale(1); } }
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px; border-bottom: 1px solid var(--border);
+}
+.modal-header h2 { font-size: 1.1em; font-weight: 600; }
+.modal-close {
+  background: none; border: none; color: var(--text-muted);
+  font-size: 1.4em; cursor: pointer; padding: 4px; line-height: 1;
+}
+.modal-close:hover { color: var(--text); }
+.modal-body {
+  padding: 16px 20px; overflow-y: auto; flex: 1;
+}
+.modal-body label {
+  display: block; font-size: 0.85em; font-weight: 500;
+  color: var(--text-muted); margin-bottom: 4px; margin-top: 12px;
+}
+.modal-body label:first-child { margin-top: 0; }
+.modal-body input, .modal-body textarea, .modal-body select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.9em;
+  font-family: var(--font);
+  outline: none;
+  transition: border .15s;
+}
+.modal-body input:focus, .modal-body textarea:focus, .modal-body select:focus {
+  border-color: var(--accent);
+}
+.modal-body textarea { min-height: 80px; resize: vertical; }
+.modal-body .row { display: flex; gap: 10px; }
+.modal-body .row > * { flex: 1; }
+.modal-footer {
+  display: flex; gap: 8px; justify-content: flex-end;
+  padding: 12px 20px; border-top: 1px solid var(--border);
+}
+.modal-footer button {
+  padding: 8px 16px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--text); cursor: pointer; font-size: 0.875em;
+  transition: background .15s;
+}
+.modal-footer button:hover { background: var(--surface-hover); }
+.modal-footer button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.modal-footer button.primary:hover { background: var(--accent-hover); }
+.modal-footer button.danger { background: var(--red); color: #fff; border-color: var(--red); }
+.modal-footer button.danger:hover { opacity: 0.9; }
+
+/* ── Toast ───────────────────────────────────────────────────── */
+.toast {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+  z-index: 300;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 20px;
+  font-size: 0.875em;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  animation: toastIn .3s ease-out;
+  pointer-events: none;
+}
+@keyframes toastIn { from { opacity:0; transform:translateX(-50%) translateY(20px); } to { opacity:1; transform:translateX(-50%) translateY(0); } }
+
+/* ── Responsive ──────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .header { padding: 10px 12px; gap: 8px; }
+  .header-title { font-size: 1em; }
+  .header-btn span.label { display: none; }
+  .search-wrap { min-width: 100px; max-width: 100%; order: 10; flex-basis: 100%; }
+  .board {
+    flex-direction: column;
+    padding: 12px;
+    gap: 16px;
+    overflow-x: hidden;
+    min-height: auto;
+  }
+  .column { min-width: 0; max-width: 100%; }
+  .column-body { min-height: 40px; }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  .board { gap: 8px; padding: 12px; }
+  .column { min-width: 0; }
+}
+
+/* ── Print ───────────────────────────────────────────────────── */
+@media print {
+  .header { position: static; }
+  .board { overflow: visible; }
+  .card { break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+
+<!-- ── Header ────────────────────────────────────────────────── -->
+<header class="header">
+  <div class="header-title">🗂️ <span>Ber</span>Kanban</div>
+  <div class="search-wrap"><input type="search" id="searchInput" placeholder="Cari deal..." autocomplete="off"></div>
+  <button class="header-btn icon-btn" id="themeToggle" title="Tukar tema">🌓</button>
+  <button class="header-btn" id="exportBtn"><span>📤</span><span class="label"> Export</span></button>
+  <button class="header-btn" id="importBtn"><span>📥</span><span class="label"> Import</span></button>
+  <button class="header-btn primary" id="addDealBtn"><span>＋</span><span class="label"> New Deal</span></button>
+</header>
+
+<!-- ── Board ─────────────────────────────────────────────────── -->
+<div class="board" id="board">
+  <div class="column" data-status="active">
+    <div class="column-header"><span>🔄</span> Active <span class="column-count" id="count-active">0</span></div>
+    <div class="column-body" id="col-active"></div>
+  </div>
+  <div class="column" data-status="closing">
+    <div class="column-header"><span>📈</span> Closing <span class="column-count" id="count-closing">0</span></div>
+    <div class="column-body" id="col-closing"></div>
+  </div>
+  <div class="column" data-status="won">
+    <div class="column-header"><span>✅</span> Won <span class="column-count" id="count-won">0</span></div>
+    <div class="column-body" id="col-won"></div>
+  </div>
+  <div class="column" data-status="lost">
+    <div class="column-header"><span>❌</span> Lost <span class="column-count" id="count-lost">0</span></div>
+    <div class="column-body" id="col-lost"></div>
+  </div>
+</div>
+
+<!-- ── Add / Edit Deal Modal ─────────────────────────────────── -->
+<div class="modal-overlay" id="dealModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="modalTitle">New Deal</h2>
+      <button class="modal-close" id="modalClose">✕</button>
+    </div>
+    <div class="modal-body">
+      <label for="dealName">Deal Name</label>
+      <input type="text" id="dealName" placeholder="e.g. Client — Project Title">
+
+      <label for="dealClient">Client</label>
+      <input type="text" id="dealClient" placeholder="e.g. ACME Corp">
+
+      <div class="row">
+        <div>
+          <label for="dealValue">Value</label>
+          <input type="text" id="dealValue" placeholder="e.g. $500K">
+        </div>
+        <div>
+          <label for="dealProb">Probability</label>
+          <select id="dealProb">
+            <option value="0">0%</option><option value="10">10%</option><option value="20">20%</option>
+            <option value="30">30%</option><option value="40">40%</option><option value="50" selected>50%</option>
+            <option value="60">60%</option><option value="70">70%</option><option value="80">80%</option>
+            <option value="90">90%</option><option value="100">100%</option>
+          </select>
+        </div>
+      </div>
+
+      <label for="dealClose">Expected Close</label>
+      <input type="text" id="dealClose" placeholder="e.g. 2026-09">
+
+      <label for="dealSummary">Summary</label>
+      <textarea id="dealSummary" placeholder="Brief description of the deal..."></textarea>
+
+      <label for="dealNotes">Notes &amp; Activity Log</label>
+      <textarea id="dealNotes" placeholder="Markdown notes, activity log, etc." style="min-height:120px"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button id="modalDelete" class="danger" style="display:none">🗑 Delete</button>
+      <div style="flex:1"></div>
+      <button id="modalCancel">Cancel</button>
+      <button id="modalSave" class="primary">💾 Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Confirm Delete Modal ──────────────────────────────────── -->
+<div class="modal-overlay" id="confirmModal">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-header"><h2>Confirm Delete</h2><button class="modal-close" id="confirmClose">✕</button></div>
+    <div class="modal-body" style="padding:20px;text-align:center">
+      <p>Betul nak delete deal ni?</p>
+      <p style="font-size:0.85em;color:var(--text-muted);margin-top:8px" id="confirmName"></p>
+    </div>
+    <div class="modal-footer">
+      <button id="confirmCancel">Cancel</button>
+      <button id="confirmDelete" class="danger">🗑 Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Import Modal ──────────────────────────────────────────── -->
+<div class="modal-overlay" id="importModal">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-header"><h2>Import Deals</h2><button class="modal-close" id="importClose">✕</button></div>
+    <div class="modal-body" style="padding:20px;text-align:center">
+      <p style="margin-bottom:12px">Pilih fail JSON dari backup sebelum ni.</p>
+      <input type="file" id="importFileInput" accept=".json" style="display:none">
+      <button class="header-btn primary" id="importFileBtn" style="margin:0 auto">📁 Pilih Fail</button>
+      <p style="font-size:0.8em;color:var(--text-muted);margin-top:8px">Existing deals with the same name will be skipped.</p>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="hiddenImportInput" accept=".json" style="display:none">
+
+<script>
+// ══════════════════════════════════════════════════════════════
+//  Service Worker Registration
+// ══════════════════════════════════════════════════════════════
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+
+// ══════════════════════════════════════════════════════════════
+//  Database
+// ══════════════════════════════════════════════════════════════
+const db = new Dexie('BerKanban');
+db.version(1).stores({
+  deals: '++id, name, status, client, created'
+});
+
+// ══════════════════════════════════════════════════════════════
+//  State
+// ══════════════════════════════════════════════════════════════
+let deals = [];
+let editingId = null;
+
+const STATUSES = ['active', 'closing', 'won', 'lost'];
+const STATUS_LABELS = { active: 'Active', closing: 'Closing', won: 'Won', lost: 'Lost' };
+const STATUS_ICONS = { active: '🔄', closing: '📈', won: '✅', lost: '❌' };
+
+// ══════════════════════════════════════════════════════════════
+//  Theme
+// ══════════════════════════════════════════════════════════════
+function loadTheme() {
+  const saved = localStorage.getItem('berkanban-theme');
+  if (saved) document.documentElement.setAttribute('data-theme', saved);
+}
+function toggleTheme() {
+  const cur = document.documentElement.getAttribute('data-theme');
+  const next = cur === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('berkanban-theme', next);
+  document.querySelector('meta[name="theme-color"]').content =
+    next === 'dark' ? '#0d1117' : '#ffffff';
+}
+
+// ══════════════════════════════════════════════════════════════
+//  CRUD
+// ══════════════════════════════════════════════════════════════
+async function loadDeals() {
+  deals = await db.deals.orderBy('created').reverse().toArray();
+  renderBoard();
+}
+
+async function createDeal(data) {
+  const deal = {
+    name: data.name.trim(),
+    client: (data.client || '').trim(),
+    status: 'active',
+    value: data.value || '',
+    probability: parseInt(data.prob) || 0,
+    expectedClose: data.close || '',
+    summary: data.summary || '',
+    notes: data.notes || '',
+    created: new Date().toISOString().slice(0, 10),
+    updated: new Date().toISOString()
+  };
+  await db.deals.add(deal);
+  await loadDeals();
+  toast('✅ Deal created');
+}
+
+async function updateDeal(id, data) {
+  const updates = {
+    name: data.name.trim(),
+    client: (data.client || '').trim(),
+    value: data.value || '',
+    probability: parseInt(data.prob) || 0,
+    expectedClose: data.close || '',
+    summary: data.summary || '',
+    notes: data.notes || '',
+    updated: new Date().toISOString()
+  };
+  await db.deals.update(id, updates);
+  await loadDeals();
+  toast('💾 Deal saved');
+}
+
+async function deleteDeal(id) {
+  await db.deals.delete(id);
+  await loadDeals();
+  toast('🗑 Deal deleted');
+}
+
+async function moveDeal(id, newStatus) {
+  await db.deals.update(id, { status: newStatus, updated: new Date().toISOString() });
+  await loadDeals();
+}
+
+// ══════════════════════════════════════════════════════════════
+//  Render
+// ══════════════════════════════════════════════════════════════
+function renderBoard(filter) {
+  for (const status of STATUSES) {
+    const col = document.getElementById(`col-${status}`);
+    const count = document.getElementById(`count-${status}`);
+    let items = deals.filter(d => d.status === status);
+    if (filter) {
+      const f = filter.toLowerCase();
+      items = items.filter(d =>
+        d.name.toLowerCase().includes(f) ||
+        (d.client || '').toLowerCase().includes(f) ||
+        (d.summary || '').toLowerCase().includes(f)
+      );
+    }
+    count.textContent = items.length;
+
+    if (items.length === 0) {
+      col.innerHTML = `<div class="empty-col">${filter ? 'No matches' : 'No deals — tap ＋'}</div>`;
+      continue;
+    }
+
+    col.innerHTML = items.map(d => renderCard(d)).join('');
+  }
+
+  // Attach drag events
+  document.querySelectorAll('.card').forEach(el => {
+    el.addEventListener('dragstart', onDragStart);
+    el.addEventListener('dragend', onDragEnd);
+    el.addEventListener('click', () => openEditModal(parseInt(el.dataset.id)));
+  });
+
+  document.querySelectorAll('.column-body').forEach(el => {
+    el.addEventListener('dragover', onDragOver);
+    el.addEventListener('dragenter', onDragEnter);
+    el.addEventListener('dragleave', onDragLeave);
+    el.addEventListener('drop', onDrop);
+  });
+}
+
+function renderCard(d) {
+  const probColor = d.probability >= 70 ? 'var(--green)' : d.probability >= 40 ? 'var(--orange)' : 'var(--red)';
+  return `
+    <div class="card" draggable="true" data-id="${d.id}" data-status="${d.status}">
+      <div class="name">${esc(d.name)}</div>
+      ${d.client ? `<div class="client">${esc(d.client)}</div>` : ''}
+      <div class="meta">
+        ${d.value ? `<span class="value-badge" style="color:${probColor}">${esc(d.value)}</span>` : ''}
+        ${d.expectedClose ? `<span>📅 ${esc(d.expectedClose)}</span>` : ''}
+        <span>${d.probability}%</span>
+      </div>
+      <div class="prob-bar"><div class="prob-fill" style="width:${d.probability}%;background:${probColor}"></div></div>
+    </div>
+  `;
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
+}
+
+// ══════════════════════════════════════════════════════════════
+//  Drag & Drop
+// ══════════════════════════════════════════════════════════════
+let draggedId = null;
+
+function onDragStart(e) {
+  draggedId = parseInt(e.currentTarget.dataset.id);
+  e.currentTarget.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', draggedId);
+}
+
+function onDragEnd(e) {
+  e.currentTarget.classList.remove('dragging');
+  document.querySelectorAll('.card.drag-over, .column-body.drag-over').forEach(el => el.classList.remove('drag-over'));
+}
+
+function onDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+}
+
+function onDragEnter(e) {
+  const target = e.currentTarget;
+  if (!target.querySelector('.card.dragging')) {
+    target.classList.add('drag-over');
+  }
+}
+
+function onDragLeave(e) {
+  e.currentTarget.classList.remove('drag-over');
+}
+
+function onDrop(e) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  const newStatus = e.currentTarget.closest('.column').dataset.status;
+  if (draggedId) {
+    const deal = deals.find(d => d.id === draggedId);
+    if (deal && deal.status !== newStatus) {
+      moveDeal(draggedId, newStatus);
+    }
+  }
+  draggedId = null;
+}
+
+// ══════════════════════════════════════════════════════════════
+//  Touch drag support (for mobile)
+// ══════════════════════════════════════════════════════════════
+(function() {
+  let touchDragId = null, touchClone = null, touchStartY = 0, touchStartX = 0;
+
+  document.addEventListener('touchstart', e => {
+    const card = e.target.closest('.card');
+    if (!card) return;
+    // Only start drag if it's a long-press
+    touchStartY = e.touches[0].clientY;
+    touchStartX = e.touches[0].clientX;
+  }, { passive: true });
+
+  document.addEventListener('touchmove', e => {
+    const card = e.target.closest('.card');
+    if (!card || touchDragId) return;
+    const dy = Math.abs(e.touches[0].clientY - touchStartY);
+    const dx = Math.abs(e.touches[0].clientX - touchStartX);
+    if (dy > 20 || dx > 20) return; // scrolling — not a drag
+    // Long press threshold
+  }, { passive: true });
+
+  // Fallback: use a simple status picker on mobile via double-tap
+  document.addEventListener('dblclick', e => {
+    const card = e.target.closest('.card');
+    if (!card) return;
+    const id = parseInt(card.dataset.id);
+    const deal = deals.find(d => d.id === id);
+    if (!deal) return;
+    // Cycle through statuses on double-tap
+    const idx = STATUSES.indexOf(deal.status);
+    const nextStatus = STATUSES[(idx + 1) % STATUSES.length];
+    moveDeal(id, nextStatus);
+    toast(`Moved to ${STATUS_LABELS[nextStatus]}`);
+  });
+})();
+
+// ══════════════════════════════════════════════════════════════
+//  Modals
+// ══════════════════════════════════════════════════════════════
+function openAddModal() {
+  editingId = null;
+  document.getElementById('modalTitle').textContent = 'New Deal';
+  document.getElementById('dealName').value = '';
+  document.getElementById('dealClient').value = '';
+  document.getElementById('dealValue').value = '';
+  document.getElementById('dealProb').value = '50';
+  document.getElementById('dealClose').value = '';
+  document.getElementById('dealSummary').value = '';
+  document.getElementById('dealNotes').value = '';
+  document.getElementById('modalDelete').style.display = 'none';
+  document.getElementById('dealModal').classList.add('open');
+  setTimeout(() => document.getElementById('dealName').focus(), 100);
+}
+
+function openEditModal(id) {
+  const deal = deals.find(d => d.id === id);
+  if (!deal) return;
+  editingId = id;
+  document.getElementById('modalTitle').textContent = 'Edit Deal';
+  document.getElementById('dealName').value = deal.name;
+  document.getElementById('dealClient').value = deal.client || '';
+  document.getElementById('dealValue').value = deal.value || '';
+  document.getElementById('dealProb').value = deal.probability || '0';
+  document.getElementById('dealClose').value = deal.expectedClose || '';
+  document.getElementById('dealSummary').value = deal.summary || '';
+  document.getElementById('dealNotes').value = deal.notes || '';
+  document.getElementById('modalDelete').style.display = '';
+  document.getElementById('dealModal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('dealModal').classList.remove('open');
+  editingId = null;
+}
+
+function getFormData() {
+  return {
+    name: document.getElementById('dealName').value,
+    client: document.getElementById('dealClient').value,
+    value: document.getElementById('dealValue').value,
+    prob: document.getElementById('dealProb').value,
+    close: document.getElementById('dealClose').value,
+    summary: document.getElementById('dealSummary').value,
+    notes: document.getElementById('dealNotes').value,
+  };
+}
+
+// ══════════════════════════════════════════════════════════════
+//  Search
+// ══════════════════════════════════════════════════════════════
+let searchTimeout;
+document.getElementById('searchInput').addEventListener('input', e => {
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(() => renderBoard(e.target.value), 200);
+});
+
+// ══════════════════════════════════════════════════════════════
+//  Export / Import
+// ══════════════════════════════════════════════════════════════
+async function exportDeals() {
+  const all = await db.deals.toArray();
+  const blob = new Blob([JSON.stringify({ version: 1, exported: new Date().toISOString(), deals: all }, null, 2)], {
+    type: 'application/json'
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `berkanban-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('📤 Deals exported');
+}
+
+async function importDeals(file) {
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    if (!data.deals || !Array.isArray(data.deals)) {
+      toast('❌ Invalid backup file');
+      return;
+    }
+    let imported = 0, skipped = 0;
+    const existing = await db.deals.toArray();
+    const existingNames = new Set(existing.map(d => d.name));
+
+    for (const deal of data.deals) {
+      if (existingNames.has(deal.name)) {
+        skipped++;
+        continue;
+      }
+      // Clean the deal object
+      const clean = {
+        name: deal.name || 'Unnamed',
+        client: deal.client || '',
+        status: STATUSES.includes(deal.status) ? deal.status : 'active',
+        value: deal.value || '',
+        probability: parseInt(deal.probability) || 0,
+        expectedClose: deal.expectedClose || '',
+        summary: deal.summary || '',
+        notes: deal.notes || '',
+        created: deal.created || new Date().toISOString().slice(0, 10),
+        updated: new Date().toISOString()
+      };
+      await db.deals.add(clean);
+      imported++;
+    }
+    await loadDeals();
+    toast(`📥 Imported ${imported} deals${skipped ? `, ${skipped} skipped (duplicate names)` : ''}`);
+  } catch (e) {
+    toast('❌ Import failed: invalid file');
+    console.error(e);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+//  Toast
+// ══════════════════════════════════════════════════════════════
+function toast(msg) {
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2500);
+}
+
+// ══════════════════════════════════════════════════════════════
+//  Sample data (first run)
+// ══════════════════════════════════════════════════════════════
+async function seedSampleData() {
+  const count = await db.deals.count();
+  if (count > 0) return;
+  const samples = [
+    { name: 'ACME Corp — Digital Transformation', client: 'ACME Corp', status: 'active', value: '$500K', probability: 60, expectedClose: '2026-09', summary: 'Enterprise-wide digital transformation including cloud migration and ERP implementation.', notes: '## Key Contacts\n- John Smith (CIO) — john@acme.com\n- Sarah Lee (CTO) — sarah@acme.com\n\n## Activities\n### 2026-01-15\n- Initial meeting with stakeholders\n- Scope defined: 3-phase rollout\n\n### 2026-02-01\n- Proposal submitted\n- Budget approval pending', created: '2026-01-15' },
+    { name: 'TechNova — AI Platform', client: 'TechNova Inc', status: 'active', value: '$350K', probability: 40, expectedClose: '2026-08', summary: 'Custom AI/ML platform for predictive maintenance.', notes: '', created: '2026-02-10' },
+    { name: 'GlobalPay — Payment Gateway', client: 'GlobalPay Ltd', status: 'closing', value: '$750K', probability: 80, expectedClose: '2026-07', summary: 'Payment gateway modernization project. Final negotiations in progress.', notes: '## Activities\n### 2026-03-01\n- Technical demo completed\n- Security audit passed\n\n### 2026-03-15\n- Commercial terms agreed\n- Contract sent for signing', created: '2026-02-20' },
+    { name: 'MediCore — Patient Portal', client: 'MediCore Health', status: 'won', value: '$280K', probability: 100, expectedClose: '2026-06', summary: 'Patient portal and appointment system. Won after competitive bid.', notes: '## Closed\nSigned 2026-03-01. Kickoff scheduled April.', created: '2026-01-05' },
+    { name: 'EduBridge — LMS Platform', client: 'EduBridge', status: 'lost', value: '$180K', probability: 0, expectedClose: '2026-05', summary: 'Learning management system. Lost to competitor on pricing.', notes: '## Lessons\n- Price was 15% above competitor\n- Follow up in 12 months for next tender cycle', created: '2025-11-10' },
+  ];
+  await db.deals.bulkAdd(samples);
+}
+
+// ══════════════════════════════════════════════════════════════
+//  Event Bindings
+// ══════════════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', async () => {
+  loadTheme();
+
+  document.getElementById('themeToggle').addEventListener('click', toggleTheme);
+  document.getElementById('addDealBtn').addEventListener('click', openAddModal);
+  document.getElementById('modalClose').addEventListener('click', closeModal);
+  document.getElementById('modalCancel').addEventListener('click', closeModal);
+
+  document.getElementById('modalSave').addEventListener('click', async () => {
+    const data = getFormData();
+    if (!data.name.trim()) { toast('❌ Deal name is required'); return; }
+    if (editingId) {
+      await updateDeal(editingId, data);
+    } else {
+      await createDeal(data);
+    }
+    closeModal();
+  });
+
+  document.getElementById('modalDelete').addEventListener('click', () => {
+    document.getElementById('confirmName').textContent = deals.find(d => d.id === editingId)?.name || '';
+    document.getElementById('confirmModal').classList.add('open');
+  });
+
+  document.getElementById('confirmClose').addEventListener('click', () =>
+    document.getElementById('confirmModal').classList.remove('open'));
+  document.getElementById('confirmCancel').addEventListener('click', () =>
+    document.getElementById('confirmModal').classList.remove('open'));
+  document.getElementById('confirmDelete').addEventListener('click', async () => {
+    if (editingId) await deleteDeal(editingId);
+    document.getElementById('confirmModal').classList.remove('open');
+    closeModal();
+  });
+
+  document.getElementById('exportBtn').addEventListener('click', exportDeals);
+
+  document.getElementById('importBtn').addEventListener('click', () => {
+    document.getElementById('importModal').classList.add('open');
+  });
+  document.getElementById('importClose').addEventListener('click', () =>
+    document.getElementById('importModal').classList.remove('open'));
+  document.getElementById('importFileBtn').addEventListener('click', () => {
+    document.getElementById('importFileInput').click();
+  });
+  document.getElementById('importFileInput').addEventListener('change', e => {
+    if (e.target.files.length) {
+      importDeals(e.target.files[0]);
+      document.getElementById('importModal').classList.remove('open');
+      e.target.value = '';
+    }
+  });
+
+  // Keyboard: Enter to save, Escape to close
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
+    }
+  });
+
+  // Close modals on overlay click
+  document.querySelectorAll('.modal-overlay').forEach(el => {
+    el.addEventListener('click', e => {
+      if (e.target === el) el.classList.remove('open');
+    });
+  });
+
+  // Load data
+  await seedSampleData();
+  await loadDeals();
+});
+</script>
+</body>
+</html>
