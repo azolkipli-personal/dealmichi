@@ -531,37 +531,8 @@ body {
 
 <!-- ── Welcome Modal (first visit) ──────────────────────────── -->
 <div class="welcome-overlay" id="welcomeModal">
-  <div class="welcome-modal">
-    <h2>👋 Selamat datang</h2>
-    <p class="sub">BerKanban — pipeline deals Anda, terus dalam browser.</p>
-
-    <div class="welcome-step">
-      <div class="welcome-step-icon">📋</div>
-      <div class="welcome-step-body">
-        <h3>Cara guna</h3>
-        <p>Deals disimpan dalam IndexedDB browser — data tak pernah dihantar ke mana-mana server. Cuma <strong>code</strong> je yang datang dari GitHub Pages. Clic k kad untuk edit details. Drag & drop antara column untuk ubah status.</p>
-      </div>
-    </div>
-
-    <div class="welcome-step">
-      <div class="welcome-step-icon">📤</div>
-      <div class="welcome-step-body">
-        <h3>Export (backup)</h3>
-        <p>Klik <strong>Export</strong> untuk muat turun backup JSON semua deals. Buat selalu — sebelum edit besar atau hujung minggu. Back-up ni satu-satunya cara nak protect data anda.</p>
-      </div>
-    </div>
-
-    <div class="welcome-step">
-      <div class="welcome-step-icon">📥</div>
-      <div class="welcome-step-body">
-        <h3>Import (pulihkan)</h3>
-        <p>Klik <strong>Import</strong> & pilih fail JSON backup. Deal dengan nama yang sama <strong>akan dilangkau</strong> (tak overwrite). Kalau browser clear data (cache, history, etc.), backup ni boleh pulihkan semua.</p>
-      </div>
-    </div>
-
-    <div class="welcome-footer">
-      <button class="header-btn primary" id="welcomeGotIt">Jom!</button>
-    </div>
+  <div class="welcome-modal" id="welcomeModalInner">
+    <!-- Content rendered by JS -->
   </div>
 </div>
 
@@ -1126,13 +1097,84 @@ document.addEventListener('DOMContentLoaded', async () => {
   loadTheme();
 
   document.getElementById('themeToggle').addEventListener('click', toggleTheme);
-  document.getElementById('welcomeBtn').addEventListener('click', () => {
-    localStorage.removeItem('berkanban-welcomed');
-    document.getElementById('welcomeModal').classList.add('open');
-  });
+// ══════════════════════════════════════════════════════════════
+//  Welcome Modal (bilingual)
+// ══════════════════════════════════════════════════════════════
+const WELCOME_LANG = {
+  en: {
+    title: '👋 Welcome to BerKanban',
+    sub: 'Your deal pipeline — right in your browser, no server needed.',
+    steps: [
+      { icon: '📋', title: 'How it works',
+        text: 'Deals are stored in IndexedDB (your browser). <strong>Your data never leaves your device</strong> — only the app code comes from GitHub Pages. Click a card to edit details. Drag & drop between columns to change status.' },
+      { icon: '📤', title: 'Export (backup)',
+        text: 'Click <strong>Export</strong> to download a JSON backup of all deals. Do this regularly — before big edits or at the end of the week. This is the only way to protect your data.' },
+      { icon: '📥', title: 'Import (restore)',
+        text: 'Click <strong>Import</strong> and pick a JSON backup file. Deals with the same name <strong>will be skipped</strong> (not overwritten). If your browser clears its data, this backup can restore everything.' },
+    ],
+    btn: 'Got it!',
+    switchTo: 'bm',
+    switchLabel: '🇲🇾 BM',
+  },
+  bm: {
+    title: '👋 Selamat datang',
+    sub: 'BerKanban — pipeline deals Anda, terus dalam browser.',
+    steps: [
+      { icon: '📋', title: 'Cara guna',
+        text: 'Deals disimpan dalam IndexedDB browser — data tak pernah dihantar ke mana-mana server. Cuma <strong>code</strong> je yang datang dari GitHub Pages. Klik kad untuk edit details. Drag & drop antara column untuk ubah status.' },
+      { icon: '📤', title: 'Export (backup)',
+        text: 'Klik <strong>Export</strong> untuk muat turun backup JSON semua deals. Buat selalu — sebelum edit besar atau hujung minggu. Back-up ni satu-satunya cara nak protect data anda.' },
+      { icon: '📥', title: 'Import (pulihkan)',
+        text: 'Klik <strong>Import</strong> & pilih fail JSON backup. Deal dengan nama yang sama <strong>akan dilangkau</strong> (tak overwrite). Kalau browser clear data (cache, history, etc.), backup ni boleh pulihkan semua.' },
+    ],
+    btn: 'Jom!',
+    switchTo: 'en',
+    switchLabel: '🇬🇧 EN',
+  },
+};
+
+function renderWelcome(lang) {
+  const t = WELCOME_LANG[lang] || WELCOME_LANG.en;
+  document.getElementById('welcomeModalInner').innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+      <div>
+        <h2>${t.title}</h2>
+        <p class="sub">${t.sub}</p>
+      </div>
+      <button class="header-btn icon-btn" id="welcomeLangToggle" title="${lang === 'en' ? 'Tukar BM' : 'Switch to EN'}" style="flex-shrink:0;">${t.switchLabel}</button>
+    </div>
+    ${t.steps.map(s => `
+      <div class="welcome-step">
+        <div class="welcome-step-icon">${s.icon}</div>
+        <div class="welcome-step-body">
+          <h3>${s.title}</h3>
+          <p>${s.text}</p>
+        </div>
+      </div>
+    `).join('')}
+    <div class="welcome-footer">
+      <button class="header-btn primary" id="welcomeGotIt">${t.btn}</button>
+    </div>`;
+
+  // Bind events (re-bind after innerHTML refresh)
   document.getElementById('welcomeGotIt').addEventListener('click', () => {
     localStorage.setItem('berkanban-welcomed', '1');
     document.getElementById('welcomeModal').classList.remove('open');
+  });
+  document.getElementById('welcomeLangToggle').addEventListener('click', () => {
+    const next = WELCOME_LANG[lang].switchTo;
+    localStorage.setItem('berkanban-lang', next);
+    renderWelcome(next);
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+//  Event Bindings
+  document.getElementById('addDealBtn').addEventListener('click', openAddModal);
+  document.getElementById('welcomeBtn').addEventListener('click', () => {
+    localStorage.removeItem('berkanban-welcomed');
+    renderWelcome(localStorage.getItem('berkanban-lang') || 'en');
+    document.getElementById('welcomeModal').classList.add('open');
   });
   document.getElementById('welcomeModal').addEventListener('click', e => {
     if (e.target === e.currentTarget) {
@@ -1140,7 +1182,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       document.getElementById('welcomeModal').classList.remove('open');
     }
   });
-  document.getElementById('addDealBtn').addEventListener('click', openAddModal);
   document.getElementById('modalClose').addEventListener('click', closeModal);
   document.getElementById('modalCancel').addEventListener('click', closeModal);
 
@@ -1208,6 +1249,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Show welcome on first visit
   if (!localStorage.getItem('berkanban-welcomed')) {
+    const lang = localStorage.getItem('berkanban-lang') || 'en';
+    renderWelcome(lang);
     document.getElementById('welcomeModal').classList.add('open');
   }
 });
