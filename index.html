@@ -291,6 +291,12 @@ body {
   overflow: hidden;
 }
 .card .prob-fill { height: 100%; border-radius: 2px; transition: width .3s; }
+.card.stale { border-color: var(--red); opacity: 0.85; }
+.card.stale::after {
+  content: '⚠️';
+  position: absolute; top: 6px; right: 8px;
+  font-size: 0.8em;
+}
 
 /* ── Empty state ─────────────────────────────────────────────── */
 .empty-col {
@@ -437,7 +443,15 @@ body {
   <button class="header-btn icon-btn" id="themeToggle" title="Toggle theme">🌓</button>
   <button class="header-btn icon-btn" id="welcomeBtn" title="How to use">❓</button>
   <select id="tagFilter" class="header-btn" style="font-size:0.8em;padding:6px 6px;max-width:120px"><option value="">All tags</option></select>
+  <select id="sortBy" class="header-btn" style="font-size:0.8em;padding:6px 6px;max-width:110px">
+    <option value="created">📅 Newest</option>
+    <option value="name">🔤 Name</option>
+    <option value="value">💰 Value</option>
+    <option value="updated">⚠️ Stale</option>
+  </select>
+  <span id="dealLimit" style="font-size:0.8em;color:var(--text-muted)">0/3</span>
   <button class="header-btn" id="exportBtn"><span>📤</span><span class="label"> Export</span></button>
+  <button class="header-btn" id="exportCsvBtn"><span>📊</span><span class="label"> CSV</span></button>
   <button class="header-btn" id="importBtn"><span>📥</span><span class="label"> Import</span></button>
   <button class="header-btn primary" id="addDealBtn"><span>＋</span><span class="label"> New Deal</span></button>
 </header>
@@ -484,6 +498,9 @@ body {
       <label for="dealClient">Client</label>
       <input type="text" id="dealClient" placeholder="e.g. ACME Corp">
 
+      <label for="dealContacts">Key Contacts</label>
+      <textarea id="dealContacts" placeholder="Name — Role — email@example.com (one per line)" style="min-height:60px"></textarea>
+
       <div class="row">
         <div>
           <label for="dealValue">Value</label>
@@ -505,6 +522,12 @@ body {
 
       <label for="dealSummary">Summary</label>
       <textarea id="dealSummary" placeholder="Brief description of the deal..."></textarea>
+
+      <label for="dealCompetitors">Competitors</label>
+      <input type="text" id="dealCompetitors" placeholder="e.g. Fujitsu, NEC">
+
+      <label for="dealNextSteps">Next Steps</label>
+      <textarea id="dealNextSteps" placeholder="Action items (one per line)" style="min-height:60px"></textarea>
 
       <label for="dealTags">Tags</label>
       <input type="text" id="dealTags" placeholder="e.g. web, enterprise (comma-separated)">
@@ -583,6 +606,15 @@ db.version(2).stores({
     deal.sortOrder = deal.sortOrder || 0;
   });
 });
+db.version(3).stores({
+  deals: '++id, name, status, client, created, *tags'
+}).upgrade(tx => {
+  return tx.table('deals').toCollection().modify(deal => {
+    deal.contacts = deal.contacts || '';
+    deal.competitors = deal.competitors || '';
+    deal.nextSteps = deal.nextSteps || '';
+  });
+});
 
 // ══════════════════════════════════════════════════════════════
 //  State
@@ -593,6 +625,21 @@ let editingId = null;
 const STATUSES = ['active', 'closing', 'won', 'lost'];
 const STATUS_LABELS = { active: 'Active', closing: 'Closing', won: 'Won', lost: 'Lost' };
 const STATUS_ICONS = { active: '🔄', closing: '📈', won: '✅', lost: '❌' };
+
+// Free tier
+const FREE_DEAL_LIMIT = 3;
+function isPro() { return localStorage.getItem('dealmichi-pro') === '1'; }
+
+// Value parser (lightweight, for sorting)
+function parseValueStr(v) {
+  if (!v) return 0;
+  const s = String(v).replace(/[¥$,]/g, '');
+  const num = parseFloat(s);
+  if (isNaN(num)) return 0;
+  if (/[kK]/.test(v)) return num * 1000;
+  if (/[mM]/.test(v)) return num * 1000000;
+  return num;
+}
 
 // ══════════════════════════════════════════════════════════════
 //  Theme — Auto/Dark/Light with system preference detection
@@ -662,11 +709,14 @@ async function createDeal(data) {
   const deal = {
     name: data.name.trim(),
     client: (data.client || '').trim(),
+    contacts: data.contacts || '',
     status: 'active',
     value: data.value || '',
     probability: parseInt(data.prob) || 0,
     expectedClose: data.close || '',
     summary: data.summary || '',
+    competitors: data.competitors || '',
+    nextSteps: data.nextSteps || '',
     tags: data.tags || [],
     notes: (data.notes || '') + logEntry,
     created: now.toISOString().slice(0, 10),
@@ -684,10 +734,13 @@ async function updateDeal(id, data) {
   const updates = {
     name: data.name.trim(),
     client: (data.client || '').trim(),
+    contacts: data.contacts || '',
     value: data.value || '',
     probability: parseInt(data.prob) || 0,
     expectedClose: data.close || '',
     summary: data.summary || '',
+    competitors: data.competitors || '',
+    nextSteps: data.nextSteps || '',
     tags: data.tags || [],
     notes: (data.notes || '') + logEntry,
     updated: now.toISOString()
@@ -747,8 +800,16 @@ function renderBoard(filter) {
     const col = document.getElementById(`col-${status}`);
     const count = document.getElementById(`count-${status}`);
     let items = deals.filter(d => d.status === status);
-    // Sort by sortOrder for reorder support
-    items.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+    // Apply sort
+    const sortBy = document.getElementById('sortBy')?.value || 'created';
+    items.sort((a, b) => {
+      if (sortBy === 'name') return a.name.localeCompare(b.name);
+      if (sortBy === 'value') { const va = parseValueStr(a.value||''); const vb = parseValueStr(b.value||''); return vb - va; }
+      if (sortBy === 'updated') return (a.updated||'') < (b.updated||'') ? 1 : -1;
+      return (b.created||'') < (a.created||'') ? -1 : 1;
+    });
+    // Then sort by sortOrder within this sort for reorder support
+    // (sortOrder is secondary — only applies within same primary sort)
     if (filter) {
       const f = filter.toLowerCase();
       items = items.filter(d =>
@@ -773,6 +834,11 @@ function renderBoard(filter) {
   // Update stats bar
   updateStats(filter);
 
+  // Update deal limit counter
+  const activeCount = deals.filter(d => d.status === 'active' || d.status === 'closing').length;
+  const limitEl = document.getElementById('dealLimit');
+  if (limitEl) limitEl.textContent = isPro() ? `${activeCount}` : `${activeCount}/${FREE_DEAL_LIMIT}`;
+
   // Attach drag events
   document.querySelectorAll('.card').forEach(el => {
     el.addEventListener('dragstart', onDragStart);
@@ -790,8 +856,10 @@ function renderBoard(filter) {
 
 function renderCard(d) {
   const probColor = d.probability >= 70 ? 'var(--green)' : d.probability >= 40 ? 'var(--orange)' : 'var(--red)';
+  const staleClass = isStale(d) ? ' stale' : '';
+  const contactLine = d.contacts ? d.contacts.split('\n')[0].split('—')[0].trim() : '';
   return `
-    <div class="card" draggable="true" data-id="${d.id}" data-status="${d.status}">
+    <div class="card${staleClass}" draggable="true" data-id="${d.id}" data-status="${d.status}">
       <div class="name">${esc(d.name)}</div>
       ${d.client ? `<div class="client">${esc(d.client)}</div>` : ''}
       <div class="meta">
@@ -800,9 +868,16 @@ function renderCard(d) {
         <span>${d.probability}%</span>
       </div>
       <div class="prob-bar"><div class="prob-fill" style="width:${d.probability}%;background:${probColor}"></div></div>
+      ${contactLine ? `<div class="contact-line" style="font-size:0.75em;color:var(--text-muted);margin-top:4px">👤 ${esc(contactLine)}</div>` : ''}
       ${d.tags?.length ? `<div class="tags">${d.tags.map(t => `<span class="tag-badge">${esc(t)}</span>`).join('')}</div>` : ''}
     </div>
   `;
+}
+
+function isStale(d) {
+  if (!d.updated) return false;
+  const days = (Date.now() - new Date(d.updated).getTime()) / (1000 * 60 * 60 * 24);
+  return days > 14;
 }
 
 function esc(s) {
@@ -1071,10 +1146,13 @@ function openAddModal() {
   document.getElementById('modalTitle').textContent = 'New Deal';
   document.getElementById('dealName').value = '';
   document.getElementById('dealClient').value = '';
+  document.getElementById('dealContacts').value = '';
   document.getElementById('dealValue').value = '';
   document.getElementById('dealProb').value = '50';
   document.getElementById('dealClose').value = '';
   document.getElementById('dealSummary').value = '';
+  document.getElementById('dealCompetitors').value = '';
+  document.getElementById('dealNextSteps').value = '';
   document.getElementById('dealTags').value = '';
   document.getElementById('dealNotes').value = '';
   document.getElementById('mdPreview').style.display = 'none';
@@ -1093,10 +1171,13 @@ function openEditModal(id) {
   document.getElementById('modalTitle').textContent = 'Edit Deal';
   document.getElementById('dealName').value = deal.name;
   document.getElementById('dealClient').value = deal.client || '';
+  document.getElementById('dealContacts').value = deal.contacts || '';
   document.getElementById('dealValue').value = deal.value || '';
   document.getElementById('dealProb').value = deal.probability || '0';
   document.getElementById('dealClose').value = deal.expectedClose || '';
   document.getElementById('dealSummary').value = deal.summary || '';
+  document.getElementById('dealCompetitors').value = deal.competitors || '';
+  document.getElementById('dealNextSteps').value = deal.nextSteps || '';
   document.getElementById('dealTags').value = (deal.tags || []).join(', ');
   document.getElementById('dealNotes').value = deal.notes || '';
   document.getElementById('mdPreview').style.display = 'none';
@@ -1118,10 +1199,13 @@ function getFormData() {
   return {
     name: document.getElementById('dealName').value,
     client: document.getElementById('dealClient').value,
+    contacts: document.getElementById('dealContacts').value,
     value: document.getElementById('dealValue').value,
     prob: document.getElementById('dealProb').value,
     close: document.getElementById('dealClose').value,
     summary: document.getElementById('dealSummary').value,
+    competitors: document.getElementById('dealCompetitors').value,
+    nextSteps: document.getElementById('dealNextSteps').value,
     tags: tags,
     notes: document.getElementById('dealNotes').value,
   };
@@ -1151,6 +1235,27 @@ async function exportDeals() {
   a.click();
   URL.revokeObjectURL(url);
   toast('📤 Deals exported');
+}
+
+function exportCSV() {
+  const headers = ['Name','Client','Status','Value','Probability','Expected Close','Summary','Tags','Contacts','Competitors','Next Steps','Created','Updated'];
+  const all = deals;
+  const rows = all.map(d => [
+    d.name, d.client||'', STATUS_LABELS[d.status]||d.status,
+    d.value||'', d.probability||'', d.expectedClose||'',
+    d.summary||'', (d.tags||[]).join('; '),
+    d.contacts||'', d.competitors||'', d.nextSteps||'',
+    d.created||'', d.updated||''
+  ]);
+  const csv = [headers, ...rows].map(r => r.map(c => '"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `dealmichi-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('📊 CSV exported');
 }
 
 async function importDeals(file) {
@@ -1277,11 +1382,11 @@ async function seedSampleData() {
   const count = await db.deals.count();
   if (count > 0) return;
   const samples = [
-    { name: 'NEC — Cloud Migration POC', client: 'NEC Corporation', status: 'active', value: '¥15M', probability: 60, expectedClose: '2026-Q3', summary: 'Phase 1 cloud migration proof of concept. Decision maker: CTO office.', notes: '## Key Contacts\n- Tanaka-san (CTO) — tanaka@nec.co.jp\n- Suzuki-san (Infra Lead) — suzuki@nec.co.jp\n\n## Activities\n### 2026-06-01\n- Initial meeting with infra team\n- Scope: 200 VMs, 3-month POC\n\n### 2026-06-10\n- Technical proposal submitted\n- Budget approval pending', tags: ['cloud', 'infra'], created: '2026-06-01' },
-    { name: 'Hitachi — MLOps Platform', client: 'Hitachi Ltd', status: 'active', value: '¥25M', probability: 40, expectedClose: '2026-Q4', summary: 'Custom MLOps platform for manufacturing AI team. Competing against Fujitsu.', notes: '', tags: ['ai', 'mlops'], created: '2026-05-15' },
-    { name: 'Rakuten — API Gateway Renewal', client: 'Rakuten Group', status: 'closing', value: '¥8M', probability: 80, expectedClose: '2026-07', summary: 'API gateway modernization. Contract in legal review.', notes: '## Activities\n### 2026-06-05\n- Final demo to engineering team\n- Architecture approved\n\n### 2026-06-15\n- Commercial terms agreed\n- Contract sent for signing', tags: ['api', 'modernization'], created: '2026-04-20' },
-    { name: 'Sony — DevOps Consulting', client: 'Sony Group', status: 'won', value: '¥12M', probability: 100, expectedClose: '2026-06', summary: '6-month DevOps transformation engagement. Won against 3 competitors.', notes: '## Closed\nSigned 2026-06-01. Kickoff July 2026.', tags: ['devops', 'consulting'], created: '2026-03-10' },
-    { name: 'LINE — Data Platform', client: 'LINE Corporation', status: 'lost', value: '¥30M', probability: 0, expectedClose: '2026-05', summary: 'Real-time data platform. Lost — client chose in-house build.', notes: '## Lessons\n- Client had strong internal team already\n- Price was competitive but build-vs-buy tipped toward internal\n\nFollow up Q1 2027 for maintenance support opportunity', tags: ['data', 'platform'], created: '2025-11-01' },
+    { name: 'NEC — Cloud Migration POC', client: 'NEC Corporation', contacts: 'Tanaka-san — CTO — tanaka@nec.co.jp\nSuzuki-san — Infra Lead — suzuki@nec.co.jp', status: 'active', value: '¥15M', probability: 60, expectedClose: '2026-Q3', summary: 'Phase 1 cloud migration proof of concept. Decision maker: CTO office.', competitors: 'Fujitsu, AWS ProServe', nextSteps: 'Schedule technical deep-dive\nSend pricing proposal', notes: '## Activities\n### 2026-06-01\n- Initial meeting with infra team\n- Scope: 200 VMs, 3-month POC\n\n### 2026-06-10\n- Technical proposal submitted\n- Budget approval pending', tags: ['cloud', 'infra'], created: '2026-06-01' },
+    { name: 'Hitachi — MLOps Platform', client: 'Hitachi Ltd', contacts: 'Yamamoto-san — AI Director', status: 'active', value: '¥25M', probability: 40, expectedClose: '2026-Q4', summary: 'Custom MLOps platform for manufacturing AI team. Competing against Fujitsu.', competitors: 'Fujitsu', nextSteps: 'Schedule POC demo\nClarify requirements doc', notes: '', tags: ['ai', 'mlops'], created: '2026-05-15' },
+    { name: 'Rakuten — API Gateway Renewal', client: 'Rakuten Group', contacts: 'Kim — VP Engineering — kim@rakuten.com', status: 'closing', value: '¥8M', probability: 80, expectedClose: '2026-07', summary: 'API gateway modernization. Contract in legal review.', competitors: '', nextSteps: 'Follow up on legal review\nPrepare kickoff plan', notes: '## Activities\n### 2026-06-05\n- Final demo to engineering team\n- Architecture approved\n\n### 2026-06-15\n- Commercial terms agreed\n- Contract sent for signing', tags: ['api', 'modernization'], created: '2026-04-20' },
+    { name: 'Sony — DevOps Consulting', client: 'Sony Group', contacts: 'Ito-san — VP Delivery', status: 'won', value: '¥12M', probability: 100, expectedClose: '2026-06', summary: '6-month DevOps transformation engagement. Won against 3 competitors.', competitors: 'Accenture, Deloitte', nextSteps: 'Kickoff meeting July 1', notes: '## Closed\nSigned 2026-06-01. Kickoff July 2026.', tags: ['devops', 'consulting'], created: '2026-03-10' },
+    { name: 'LINE — Data Platform', client: 'LINE Corporation', contacts: 'Park-san — CTO Office', status: 'lost', value: '¥30M', probability: 0, expectedClose: '2026-05', summary: 'Real-time data platform. Lost — client chose in-house build.', competitors: '', nextSteps: 'Follow up Q1 2027', notes: '## Lessons\n- Client had strong internal team already\n- Price was competitive but build-vs-buy tipped toward internal\n\nFollow up Q1 2027 for maintenance support opportunity', tags: ['data', 'platform'], created: '2025-11-01' },
   ];
   await db.deals.bulkAdd(samples);
 }
@@ -1366,7 +1471,14 @@ function renderWelcome(lang) {
 
 // ══════════════════════════════════════════════════════════════
 //  Event Bindings
-  document.getElementById('addDealBtn').addEventListener('click', openAddModal);
+  document.getElementById('addDealBtn').addEventListener('click', () => {
+    const activeCount = deals.filter(d => d.status === 'active' || d.status === 'closing').length;
+    if (!isPro() && activeCount >= FREE_DEAL_LIMIT) {
+      toast(`🔒 Free tier: max ${FREE_DEAL_LIMIT} active deals. Upgrade to Pro for unlimited.`);
+      return;
+    }
+    openAddModal();
+  });
   document.getElementById('welcomeBtn').addEventListener('click', () => {
     localStorage.removeItem('dealmichi-welcomed');
     renderWelcome(localStorage.getItem('dealmichi-lang') || 'en');
@@ -1430,8 +1542,12 @@ function renderWelcome(lang) {
   });
 
   document.getElementById('exportBtn').addEventListener('click', exportDeals);
+  document.getElementById('exportCsvBtn').addEventListener('click', exportCSV);
 
   document.getElementById('tagFilter').addEventListener('change', () => {
+    renderBoard(document.getElementById('searchInput').value);
+  });
+  document.getElementById('sortBy').addEventListener('change', () => {
     renderBoard(document.getElementById('searchInput').value);
   });
 

@@ -4,7 +4,8 @@ const URLS = [
   'manifest.json',
   'icons/icon-192.png',
   'icons/icon-512.png',
-  'https://cdn.jsdelivr.net/npm/dexie@4/dist/dexie.min.js'
+  'https://cdn.jsdelivr.net/npm/dexie@4/dist/dexie.min.js',
+  'https://cdn.jsdelivr.net/npm/marked/marked.min.js'
 ];
 
 self.addEventListener('install', e => {
