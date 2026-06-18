@@ -404,7 +404,65 @@ body {
 .md-preview strong { font-weight:600; }
 .md-preview em { font-style:italic; }
 
-/* ── Responsive ──────────────────────────────────────────────── */
+/* ── Table View ──────────────────────────────────────────────── */
+.view-toggle { margin-right: 2px; }
+.view-toggle .active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.table-wrap {
+  padding: 16px; overflow-x: auto;
+  min-height: calc(100dvh - 150px);
+}
+.table-wrap table {
+  width: 100%; border-collapse: separate; border-spacing: 0;
+  font-size: 0.85em;
+}
+.table-wrap th {
+  position: sticky; top: 0; z-index: 2;
+  background: var(--surface);
+  border-bottom: 2px solid var(--accent);
+  padding: 10px 12px;
+  text-align: left; font-weight: 600; white-space: nowrap;
+  color: var(--text-muted); text-transform: uppercase; font-size: 0.75em; letter-spacing: 0.4px;
+  cursor: pointer; user-select: none;
+}
+.table-wrap th:hover { color: var(--text); }
+.table-wrap th .sort-arrow { margin-left: 4px; opacity: 0.4; }
+.table-wrap th.sort-active .sort-arrow { opacity: 1; color: var(--accent); }
+.table-wrap td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.table-wrap tr {
+  transition: background .1s;
+  cursor: pointer;
+}
+.table-wrap tbody tr:hover { background: var(--surface-hover); }
+.table-wrap tbody tr.stale-row td:first-child { border-left: 3px solid var(--red); }
+.td-status {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 10px; border-radius: 10px;
+  font-size: 0.8em; font-weight: 500;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.td-value { font-weight: 600; white-space: nowrap; }
+.td-prob {
+  display: flex; align-items: center; gap: 8px; min-width: 80px;
+}
+.td-prob-bar {
+  flex: 1; height: 6px; border-radius: 3px; background: var(--border);
+  overflow: hidden; min-width: 40px;
+}
+.td-prob-fill { height: 100%; border-radius: 3px; }
+.td-tags { display: flex; flex-wrap: wrap; gap: 3px; }
+.td-client, .td-contact { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.td-stale { font-size: 0.75em; color: var(--red); white-space: nowrap; }
+@media (max-width: 768px) {
+  .table-wrap { padding: 8px; }
+  .table-wrap th, .table-wrap td { padding: 8px 6px; font-size: 0.8em; }
+  .td-hide-mobile { display: none; }
+}
+
 @media (max-width: 768px) {
   .header { padding: 10px 12px; gap: 8px; }
   .header-title { font-size: 1em; }
@@ -440,6 +498,7 @@ body {
 <header class="header">
   <div class="header-title">🤝 <span>Deal</span>Michi</div>
   <div class="search-wrap"><input type="search" id="searchInput" placeholder="Search deals..." autocomplete="off"></div>
+  <button class="header-btn icon-btn view-toggle" id="viewToggle" title="Switch view">📋</button>
   <button class="header-btn icon-btn" id="themeToggle" title="Toggle theme">🌓</button>
   <button class="header-btn icon-btn" id="welcomeBtn" title="How to use">❓</button>
   <select id="tagFilter" class="header-btn" style="font-size:0.8em;padding:6px 6px;max-width:120px"><option value="">All tags</option></select>
@@ -858,9 +917,111 @@ async function moveDeal(id, newStatus) {
 }
 
 // ══════════════════════════════════════════════════════════════
-//  Render
+//  Render — Board View
 // ══════════════════════════════════════════════════════════════
+function renderTableView(filter) {
+  const tagVal = document.getElementById('tagFilter')?.value || '';
+  const sortBy = document.getElementById('sortBy')?.value || 'created';
+  const board = document.getElementById('board');
+
+  let items = [...deals];
+  // Apply filter
+  if (filter) {
+    const f = filter.toLowerCase();
+    items = items.filter(d => d.name.toLowerCase().includes(f) || (d.client||'').toLowerCase().includes(f) || (d.summary||'').toLowerCase().includes(f));
+  }
+  if (tagVal) {
+    items = items.filter(d => (d.tags||[]).some(t => t.toLowerCase() === tagVal.toLowerCase()));
+  }
+  // Apply sort
+  items.sort((a, b) => {
+    if (sortBy === 'name') return a.name.localeCompare(b.name);
+    if (sortBy === 'value') { const va = parseValueStr(a.value||''); const vb = parseValueStr(b.value||''); return vb - va; }
+    if (sortBy === 'updated') return (a.updated||'') < (b.updated||'') ? 1 : -1;
+    return (b.created||'') < (a.created||'') ? -1 : 1;
+  });
+
+  // Table-sort state
+  if (!window._tableSort) window._tableSort = { col: '', asc: true };
+
+  function sortByColumn(col) {
+    const s = window._tableSort;
+    if (s.col === col) s.asc = !s.asc;
+    else { s.col = col; s.asc = true; }
+    items.sort((a, b) => {
+      let va, vb;
+      if (col === 'name') { va = a.name.toLowerCase(); vb = b.name.toLowerCase(); }
+      else if (col === 'client') { va = (a.client||'').toLowerCase(); vb = (b.client||'').toLowerCase(); }
+      else if (col === 'status') { va = getStageLabel(a.status); vb = getStageLabel(b.status); }
+      else if (col === 'value') { va = parseValueStr(a.value||''); vb = parseValueStr(b.value||''); }
+      else if (col === 'prob') { va = a.probability||0; vb = b.probability||0; }
+      else if (col === 'close') { va = a.expectedClose||''; vb = b.expectedClose||''; }
+      else if (col === 'updated') { va = a.updated||''; vb = b.updated||''; }
+      else return 0;
+      if (typeof va === 'string') return s.asc ? va.localeCompare(vb) : vb.localeCompare(va);
+      return s.asc ? va - vb : vb - va;
+    });
+    renderTableView(filter);
+  }
+  window.sortByColumn = sortByColumn;
+
+  const probColor = p => p >= 70 ? 'var(--green)' : p >= 40 ? 'var(--orange)' : 'var(--red)';
+  const daysSince = d => d.updated ? Math.floor((Date.now() - new Date(d.updated).getTime()) / (1000*60*60*24)) : '-';
+
+  const rows = items.map(d => {
+    const stale = isStale(d);
+    const contactFirst = d.contacts ? d.contacts.split('\n')[0].split('—')[0].trim() : '';
+    return `<tr class="${stale ? 'stale-row' : ''}" data-id="${d.id}">
+      <td><strong>${esc(d.name)}</strong>${stale ? ' <span class="td-stale">⚠️</span>' : ''}</td>
+      <td class="td-client td-hide-mobile">${esc(d.client||'')}</td>
+      <td><span class="td-status">${getStageIcon(d.status)} ${esc(getStageLabel(d.status))}</span></td>
+      <td class="td-value" style="color:${d.value ? probColor(d.probability) : 'var(--text-muted)'}">${esc(d.value||'—')}</td>
+      <td><div class="td-prob"><span style="font-size:0.85em;font-weight:600">${d.probability}%</span><div class="td-prob-bar"><div class="td-prob-fill" style="width:${d.probability}%;background:${probColor(d.probability)}"></div></div></div></td>
+      <td class="td-hide-mobile">${esc(d.expectedClose||'—')}</td>
+      <td class="td-contact td-hide-mobile">${esc(contactFirst)}</td>
+      <td class="td-hide-mobile">${d.tags?.length ? `<div class="td-tags">${d.tags.map(t => `<span class="tag-badge">${esc(t)}</span>`).join('')}</div>` : '—'}</td>
+      <td class="td-stale td-hide-mobile">${stale ? `${daysSince(d)}d` : '—'}</td>
+    </tr>`;
+  }).join('');
+
+  const hasData = items.length > 0;
+  board.innerHTML = `<div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th onclick="sortByColumn('name')">Name${sortBy === 'name' ? ' ▲' : ''}</th>
+        <th class="td-hide-mobile" onclick="sortByColumn('client')">Client</th>
+        <th onclick="sortByColumn('status')">Status</th>
+        <th onclick="sortByColumn('value')">Value</th>
+        <th onclick="sortByColumn('prob')">Prob</th>
+        <th class="td-hide-mobile" onclick="sortByColumn('close')">Close</th>
+        <th class="td-hide-mobile">Contact</th>
+        <th class="td-hide-mobile">Tags</th>
+        <th class="td-hide-mobile" onclick="sortByColumn('updated')">Stale</th>
+      </tr></thead>
+      <tbody>${hasData ? rows : '<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--text-muted)">' + (filter||tagVal ? 'No matches' : 'No deals yet — tap ＋ to add one') + '</td></tr>'}</tbody>
+    </table>
+  </div>`;
+
+  // Click row to edit
+  board.querySelectorAll('tbody tr[data-id]').forEach(el => {
+    el.addEventListener('click', () => openEditModal(parseInt(el.dataset.id)));
+  });
+
+  updateStats(filter);
+  const activeCount = deals.filter(d => d.status === 'active' || d.status === 'closing').length;
+  const limitEl = document.getElementById('dealLimit');
+  if (limitEl) limitEl.textContent = isPro() ? `${activeCount}` : `${activeCount}/${FREE_DEAL_LIMIT}`;
+}
+
+function getViewMode() {
+  return localStorage.getItem('dealmichi-view') || 'board';
+}
+
 function renderBoard(filter) {
+  if (getViewMode() === 'table') {
+    renderTableView(filter);
+    return;
+  }
   const tagVal = document.getElementById('tagFilter')?.value || '';
   const sortBy = document.getElementById('sortBy')?.value || 'created';
   const board = document.getElementById('board');
@@ -1460,6 +1621,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   loadTheme();
 
   document.getElementById('themeToggle').addEventListener('click', toggleTheme);
+
+  // View toggle
+  const viewBtn = document.getElementById('viewToggle');
+  function updateViewBtn() {
+    viewBtn.textContent = getViewMode() === 'table' ? '📋' : '🗂️';
+    viewBtn.title = getViewMode() === 'table' ? 'Switch to Board' : 'Switch to Table';
+  }
+  updateViewBtn();
+  viewBtn.addEventListener('click', () => {
+    const next = getViewMode() === 'table' ? 'board' : 'table';
+    localStorage.setItem('dealmichi-view', next);
+    updateViewBtn();
+    renderBoard(document.getElementById('searchInput').value);
+  });
 // ══════════════════════════════════════════════════════════════
 //  Welcome Modal (bilingual)
 // ══════════════════════════════════════════════════════════════
