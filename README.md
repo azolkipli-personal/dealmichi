@@ -1,44 +1,34 @@
-# BerKanban PWA 🗂️
+# DealMichi — ディール道
 
-Fully offline Kanban board for deal pipeline management. Runs on Android, tablet, desktop — no server needed.
+**Offline-first sales pipeline Kanban for Android.**
 
-## Install on Android
+No server. No account. No internet needed. Your deals live on your device.
 
-1. Open **`index.html`** in Chrome
-2. Tap the menu ⋮ → **Add to Home Screen**
-3. BerKanban appears as an app with its own icon
+## Features
 
-Once installed, works fully offline.
+- 📋 **Kanban board** — Active → Closing → Won → Lost
+- 📊 **Pipeline stats** — Total value, win rate, avg deal size
+- 🏷️ **Tags** — Filter by industry, product, rep
+- 📤 **Export/Import** — JSON backup & restore
+- 🌓 **Dark/Light/Auto theme** — Follows your system
+- 📱 **Mobile-first** — Touch drag-drop, double-tap to move
+- 🇯🇵 **Japanese UI** — Full Japanese localization
+- 🔒 **100% offline** — IndexedDB, no data leaves your device
 
-## Usage
+## Install
 
-| Action | How |
-|--------|-----|
-| **Add deal** | Tap ＋ New Deal |
-| **Edit deal** | Tap any card |
-| **Move between columns** | Drag & drop (desktop) or double-tap (mobile cycles through statuses) |
-| **Search** | Type in search bar |
-| **Export backup** | Tap 📤 Export → saves `.json` |
-| **Import backup** | Tap 📥 Import → select `.json` file |
-| **Toggle theme** | Tap 🌓 |
+1. Open `index.html` in Chrome/Edge on Android
+2. Tap "Add to Home Screen"
+3. Use like a native app — works offline
 
-## Columns
+## Google Play
 
-- 🔄 **Active** — deals in progress
-- 📈 **Closing** — near closure
-- ✅ **Won** — closed won
-- ❌ **Lost** — closed lost
+Available on Google Play as a native Android app (TWA wrapper).
 
-## Data
+## Tech
 
-All data stored locally in your browser's IndexedDB. Export regularly for backup.
+Single HTML file. Dexie.js (IndexedDB). No build step. No framework.
 
-## Development
+## License
 
-No build tools needed. Just serve with any static server:
-
-```bash
-python3 -m http.server 8080
-# or
-npx serve .
-```
+MIT

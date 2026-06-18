@@ -1,4 +1,4 @@
-const CACHE = 'berkanban-v1';
+const CACHE = 'dealmichi-v1';
 const URLS = [
   'index.html',
   'manifest.json',

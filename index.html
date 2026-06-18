@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<meta name="theme-color" content="#0d1117">
+<meta name="theme-color" content="#d2991d">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icons/icon-192.png" sizes="192x192">
 <script src="https://cdn.jsdelivr.net/npm/dexie@4/dist/dexie.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-<title>BerKanban</title>
+<title>DealMichi</title>
 <style>
 /* ── CSS Variables (Dark = default) ──────────────────────────── */
 :root {
@@ -19,8 +19,8 @@
   --border: #30363d;
   --text: #e6edf3;
   --text-muted: #8b949e;
-  --accent: #58a6ff;
-  --accent-hover: #79c0ff;
+  --accent: #d2991d;
+  --accent-hover: #e6b042;
   --green: #3fb950;
   --orange: #d2991d;
   --red: #f85149;
@@ -41,8 +41,8 @@
   --border: #d0d7de;
   --text: #1f2328;
   --text-muted: #656d76;
-  --accent: #0969da;
-  --accent-hover: #0550ae;
+  --accent: #b8860b;
+  --accent-hover: #9a6f09;
   --green: #1a7f37;
   --orange: #9a6700;
   --red: #cf222e;
@@ -432,10 +432,10 @@ body {
 
 <!-- ── Header ────────────────────────────────────────────────── -->
 <header class="header">
-  <div class="header-title">🗂️ <span>Ber</span>Kanban</div>
-  <div class="search-wrap"><input type="search" id="searchInput" placeholder="Cari deal..." autocomplete="off"></div>
-  <button class="header-btn icon-btn" id="themeToggle" title="Tukar tema">🌓</button>
-  <button class="header-btn icon-btn" id="welcomeBtn" title="Cara guna">❓</button>
+  <div class="header-title">🤝 <span>Deal</span>Michi</div>
+  <div class="search-wrap"><input type="search" id="searchInput" placeholder="Search deals..." autocomplete="off"></div>
+  <button class="header-btn icon-btn" id="themeToggle" title="Toggle theme">🌓</button>
+  <button class="header-btn icon-btn" id="welcomeBtn" title="How to use">❓</button>
   <select id="tagFilter" class="header-btn" style="font-size:0.8em;padding:6px 6px;max-width:120px"><option value="">All tags</option></select>
   <button class="header-btn" id="exportBtn"><span>📤</span><span class="label"> Export</span></button>
   <button class="header-btn" id="importBtn"><span>📥</span><span class="label"> Import</span></button>
@@ -528,7 +528,7 @@ body {
   <div class="modal" style="max-width:380px">
     <div class="modal-header"><h2>Confirm Delete</h2><button class="modal-close" id="confirmClose">✕</button></div>
     <div class="modal-body" style="padding:20px;text-align:center">
-      <p>Betul nak delete deal ni?</p>
+      <p>Delete this deal?</p>
       <p style="font-size:0.85em;color:var(--text-muted);margin-top:8px" id="confirmName"></p>
     </div>
     <div class="modal-footer">
@@ -543,9 +543,9 @@ body {
   <div class="modal" style="max-width:400px">
     <div class="modal-header"><h2>Import Deals</h2><button class="modal-close" id="importClose">✕</button></div>
     <div class="modal-body" style="padding:20px;text-align:center">
-      <p style="margin-bottom:12px">Pilih fail JSON dari backup sebelum ni.</p>
+      <p style="margin-bottom:12px">Choose a JSON backup file to restore.</p>
       <input type="file" id="importFileInput" accept=".json" style="display:none">
-      <button class="header-btn primary" id="importFileBtn" style="margin:0 auto">📁 Pilih Fail</button>
+      <button class="header-btn primary" id="importFileBtn" style="margin:0 auto">📁 Choose File</button>
       <p style="font-size:0.8em;color:var(--text-muted);margin-top:8px">Existing deals with the same name will be skipped.</p>
     </div>
   </div>
@@ -571,7 +571,7 @@ if ('serviceWorker' in navigator) {
 // ══════════════════════════════════════════════════════════════
 //  Database
 // ══════════════════════════════════════════════════════════════
-const db = new Dexie('BerKanban');
+const db = new Dexie('DealMichi');
 db.version(1).stores({
   deals: '++id, name, status, client, created'
 });
@@ -598,14 +598,14 @@ const STATUS_ICONS = { active: '🔄', closing: '📈', won: '✅', lost: '❌' 
 //  Theme — Auto/Dark/Light with system preference detection
 // ══════════════════════════════════════════════════════════════
 function loadTheme() {
-  const mode = localStorage.getItem('berkanban-theme-mode') || 'auto';
+  const mode = localStorage.getItem('dealmichi-theme-mode') || 'auto';
   applyTheme(mode);
   const mq = window.matchMedia('(prefers-color-scheme: dark)');
   mq.removeEventListener('change', onSystemThemeChange);
   mq.addEventListener('change', onSystemThemeChange);
 }
 function onSystemThemeChange() {
-  const mode = localStorage.getItem('berkanban-theme-mode') || 'auto';
+  const mode = localStorage.getItem('dealmichi-theme-mode') || 'auto';
   if (mode === 'auto') applyTheme('auto');
 }
 function applyTheme(mode) {
@@ -625,12 +625,12 @@ function applyTheme(mode) {
   else btn.textContent = '☀️';
 }
 function toggleTheme() {
-  const cur = localStorage.getItem('berkanban-theme-mode') || 'auto';
+  const cur = localStorage.getItem('dealmichi-theme-mode') || 'auto';
   let next;
   if (cur === 'auto') next = 'dark';
   else if (cur === 'dark') next = 'light';
   else next = 'auto';
-  localStorage.setItem('berkanban-theme-mode', next);
+  localStorage.setItem('dealmichi-theme-mode', next);
   applyTheme(next);
 }
 
@@ -1147,7 +1147,7 @@ async function exportDeals() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `berkanban-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = `dealmichi-backup-${new Date().toISOString().slice(0, 10)}.json`;
   a.click();
   URL.revokeObjectURL(url);
   toast('📤 Deals exported');
@@ -1277,11 +1277,11 @@ async function seedSampleData() {
   const count = await db.deals.count();
   if (count > 0) return;
   const samples = [
-    { name: 'ACME Corp — Digital Transformation', client: 'ACME Corp', status: 'active', value: '$500K', probability: 60, expectedClose: '2026-09', summary: 'Enterprise-wide digital transformation including cloud migration and ERP implementation.', notes: '## Key Contacts\n- John Smith (CIO) — john@acme.com\n- Sarah Lee (CTO) — sarah@acme.com\n\n## Activities\n### 2026-01-15\n- Initial meeting with stakeholders\n- Scope defined: 3-phase rollout\n\n### 2026-02-01\n- Proposal submitted\n- Budget approval pending', created: '2026-01-15' },
-    { name: 'TechNova — AI Platform', client: 'TechNova Inc', status: 'active', value: '$350K', probability: 40, expectedClose: '2026-08', summary: 'Custom AI/ML platform for predictive maintenance.', notes: '', created: '2026-02-10' },
-    { name: 'GlobalPay — Payment Gateway', client: 'GlobalPay Ltd', status: 'closing', value: '$750K', probability: 80, expectedClose: '2026-07', summary: 'Payment gateway modernization project. Final negotiations in progress.', notes: '## Activities\n### 2026-03-01\n- Technical demo completed\n- Security audit passed\n\n### 2026-03-15\n- Commercial terms agreed\n- Contract sent for signing', created: '2026-02-20' },
-    { name: 'MediCore — Patient Portal', client: 'MediCore Health', status: 'won', value: '$280K', probability: 100, expectedClose: '2026-06', summary: 'Patient portal and appointment system. Won after competitive bid.', notes: '## Closed\nSigned 2026-03-01. Kickoff scheduled April.', created: '2026-01-05' },
-    { name: 'EduBridge — LMS Platform', client: 'EduBridge', status: 'lost', value: '$180K', probability: 0, expectedClose: '2026-05', summary: 'Learning management system. Lost to competitor on pricing.', notes: '## Lessons\n- Price was 15% above competitor\n- Follow up in 12 months for next tender cycle', created: '2025-11-10' },
+    { name: 'NEC — Cloud Migration POC', client: 'NEC Corporation', status: 'active', value: '¥15M', probability: 60, expectedClose: '2026-Q3', summary: 'Phase 1 cloud migration proof of concept. Decision maker: CTO office.', notes: '## Key Contacts\n- Tanaka-san (CTO) — tanaka@nec.co.jp\n- Suzuki-san (Infra Lead) — suzuki@nec.co.jp\n\n## Activities\n### 2026-06-01\n- Initial meeting with infra team\n- Scope: 200 VMs, 3-month POC\n\n### 2026-06-10\n- Technical proposal submitted\n- Budget approval pending', tags: ['cloud', 'infra'], created: '2026-06-01' },
+    { name: 'Hitachi — MLOps Platform', client: 'Hitachi Ltd', status: 'active', value: '¥25M', probability: 40, expectedClose: '2026-Q4', summary: 'Custom MLOps platform for manufacturing AI team. Competing against Fujitsu.', notes: '', tags: ['ai', 'mlops'], created: '2026-05-15' },
+    { name: 'Rakuten — API Gateway Renewal', client: 'Rakuten Group', status: 'closing', value: '¥8M', probability: 80, expectedClose: '2026-07', summary: 'API gateway modernization. Contract in legal review.', notes: '## Activities\n### 2026-06-05\n- Final demo to engineering team\n- Architecture approved\n\n### 2026-06-15\n- Commercial terms agreed\n- Contract sent for signing', tags: ['api', 'modernization'], created: '2026-04-20' },
+    { name: 'Sony — DevOps Consulting', client: 'Sony Group', status: 'won', value: '¥12M', probability: 100, expectedClose: '2026-06', summary: '6-month DevOps transformation engagement. Won against 3 competitors.', notes: '## Closed\nSigned 2026-06-01. Kickoff July 2026.', tags: ['devops', 'consulting'], created: '2026-03-10' },
+    { name: 'LINE — Data Platform', client: 'LINE Corporation', status: 'lost', value: '¥30M', probability: 0, expectedClose: '2026-05', summary: 'Real-time data platform. Lost — client chose in-house build.', notes: '## Lessons\n- Client had strong internal team already\n- Price was competitive but build-vs-buy tipped toward internal\n\nFollow up Q1 2027 for maintenance support opportunity', tags: ['data', 'platform'], created: '2025-11-01' },
   ];
   await db.deals.bulkAdd(samples);
 }
@@ -1298,34 +1298,34 @@ document.addEventListener('DOMContentLoaded', async () => {
 // ══════════════════════════════════════════════════════════════
 const WELCOME_LANG = {
   en: {
-    title: '👋 Welcome to BerKanban',
-    sub: 'Your deal pipeline — right in your browser, no server needed.',
+    title: '🤝 Welcome to DealMichi',
+    sub: 'ディール道 — "The Way of Deals." Your sales pipeline, fully offline.',
     steps: [
       { icon: '📋', title: 'How it works',
-        text: 'Deals are stored in IndexedDB (your browser). <strong>Your data never leaves your device</strong> — only the app code comes from GitHub Pages. Click a card to edit details. Drag & drop between columns to change status.' },
+        text: 'Deals are stored <strong>on your device only</strong> — no server, no account, no internet needed. Click a card to edit. Drag between columns to update status. Double-tap to cycle quickly.' },
       { icon: '📤', title: 'Export (backup)',
-        text: 'Click <strong>Export</strong> to download a JSON backup of all deals. Do this regularly — before big edits or at the end of the week. This is the only way to protect your data.' },
+        text: 'Click <strong>Export</strong> regularly to save a JSON backup. This is your safety net — export before big changes or at end of week.' },
       { icon: '📥', title: 'Import (restore)',
-        text: 'Click <strong>Import</strong> and pick a JSON backup file. Deals with the same name <strong>will be skipped</strong> (not overwritten). If your browser clears its data, this backup can restore everything.' },
+        text: 'Click <strong>Import</strong> to restore from a JSON backup. Duplicate names are skipped — your existing data is safe.' },
     ],
     btn: 'Got it!',
-    switchTo: 'bm',
-    switchLabel: '🇲🇾 BM',
+    switchTo: 'ja',
+    switchLabel: '🇯🇵 日本語',
   },
-  bm: {
-    title: '👋 Selamat datang',
-    sub: 'BerKanban — pipeline deals Anda, terus dalam browser.',
+  ja: {
+    title: '🤝 DealMichi へようこそ',
+    sub: 'ディール道 — あなたの営業パイプライン、完全オフライン。',
     steps: [
-      { icon: '📋', title: 'Cara guna',
-        text: 'Deals disimpan dalam IndexedDB browser — data tak pernah dihantar ke mana-mana server. Cuma <strong>code</strong> je yang datang dari GitHub Pages. Klik kad untuk edit details. Drag & drop antara column untuk ubah status.' },
-      { icon: '📤', title: 'Export (backup)',
-        text: 'Klik <strong>Export</strong> untuk muat turun backup JSON semua deals. Buat selalu — sebelum edit besar atau hujung minggu. Back-up ni satu-satunya cara nak protect data anda.' },
-      { icon: '📥', title: 'Import (pulihkan)',
-        text: 'Klik <strong>Import</strong> & pilih fail JSON backup. Deal dengan nama yang sama <strong>akan dilangkau</strong> (tak overwrite). Kalau browser clear data (cache, history, etc.), backup ni boleh pulihkan semua.' },
+      { icon: '📋', title: '使い方',
+        text: '取引データは<strong>あなたの端末だけ</strong>に保存されます。サーバーなし、アカウント不要、インターネット不要。カードをクリックして編集、列間をドラッグしてステータス変更。' },
+      { icon: '📤', title: 'エクスポート（バックアップ）',
+        text: '定期的に<strong>エクスポート</strong>してJSONバックアップを保存してください。大きな変更の前や週末に行うのがおすすめです。' },
+      { icon: '📥', title: 'インポート（復元）',
+        text: '<strong>インポート</strong>でJSONバックアップから復元できます。同名の取引はスキップされるので、既存データは安全です。' },
     ],
-    btn: 'Jom!',
+    btn: '始めましょう！',
     switchTo: 'en',
-    switchLabel: '🇬🇧 EN',
+    switchLabel: '🇬🇧 English',
   },
 };
 
@@ -1337,7 +1337,7 @@ function renderWelcome(lang) {
         <h2>${t.title}</h2>
         <p class="sub">${t.sub}</p>
       </div>
-      <button class="header-btn icon-btn" id="welcomeLangToggle" title="${lang === 'en' ? 'Tukar BM' : 'Switch to EN'}" style="flex-shrink:0;">${t.switchLabel}</button>
+      <button class="header-btn icon-btn" id="welcomeLangToggle" title="${lang === 'en' ? '日本語に切替' : 'Switch to English'}" style="flex-shrink:0;">${t.switchLabel}</button>
     </div>
     ${t.steps.map(s => `
       <div class="welcome-step">
@@ -1354,12 +1354,12 @@ function renderWelcome(lang) {
 
   // Bind events (re-bind after innerHTML refresh)
   document.getElementById('welcomeGotIt').addEventListener('click', () => {
-    localStorage.setItem('berkanban-welcomed', '1');
+    localStorage.setItem('dealmichi-welcomed', '1');
     document.getElementById('welcomeModal').classList.remove('open');
   });
   document.getElementById('welcomeLangToggle').addEventListener('click', () => {
     const next = WELCOME_LANG[lang].switchTo;
-    localStorage.setItem('berkanban-lang', next);
+    localStorage.setItem('dealmichi-lang', next);
     renderWelcome(next);
   });
 }
@@ -1368,13 +1368,13 @@ function renderWelcome(lang) {
 //  Event Bindings
   document.getElementById('addDealBtn').addEventListener('click', openAddModal);
   document.getElementById('welcomeBtn').addEventListener('click', () => {
-    localStorage.removeItem('berkanban-welcomed');
-    renderWelcome(localStorage.getItem('berkanban-lang') || 'en');
+    localStorage.removeItem('dealmichi-welcomed');
+    renderWelcome(localStorage.getItem('dealmichi-lang') || 'en');
     document.getElementById('welcomeModal').classList.add('open');
   });
   document.getElementById('welcomeModal').addEventListener('click', e => {
     if (e.target === e.currentTarget) {
-      localStorage.setItem('berkanban-welcomed', '1');
+      localStorage.setItem('dealmichi-welcomed', '1');
       document.getElementById('welcomeModal').classList.remove('open');
     }
   });
@@ -1470,8 +1470,8 @@ function renderWelcome(lang) {
   await loadDeals();
 
   // Show welcome on first visit
-  if (!localStorage.getItem('berkanban-welcomed')) {
-    const lang = localStorage.getItem('berkanban-lang') || 'en';
+  if (!localStorage.getItem('dealmichi-welcomed')) {
+    const lang = localStorage.getItem('dealmichi-lang') || 'en';
     renderWelcome(lang);
     document.getElementById('welcomeModal').classList.add('open');
   }
