@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Privacy Policy — DealMichi</title>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d;
+    --text: #e6edf3; --text-muted: #8b949e; --accent: #d2991d;
+    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--font); background: var(--bg); color: var(--text);
+    padding: 40px 20px; max-width: 720px; margin: 0 auto; line-height: 1.7;
+  }
+  h1 { font-size: 1.5em; margin-bottom: 4px; color: var(--accent); }
+  .sub { color: var(--text-muted); font-size: 0.85em; margin-bottom: 32px; }
+  h2 { font-size: 1.1em; margin: 28px 0 8px; }
+  p, li { font-size: 0.9em; color: var(--text-muted); margin-bottom: 8px; }
+  ul { padding-left: 20px; }
+  li { margin-bottom: 4px; }
+  hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
+  .footer { font-size: 0.8em; color: var(--text-muted); text-align: center; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<h1>🤝 DealMichi Privacy Policy</h1>
+<p class="sub">Last updated: June 18, 2026</p>
+
+<h2>Overview</h2>
+<p>DealMichi is a sales pipeline tracking application that runs entirely on your device. <strong>We do not collect, store, transmit, or share any personal data.</strong> This policy exists to be transparent about what the app does with your information.</p>
+
+<h2>Data Storage</h2>
+<p>All data you enter into DealMichi (deals, contacts, notes, settings) is stored <strong>exclusively on your device</strong> using:</p>
+<ul>
+  <li><strong>IndexedDB</strong> (via Dexie.js) — your deal database</li>
+  <li><strong>localStorage</strong> — app preferences and stage configuration</li>
+</ul>
+<p>This data never leaves your device. There are no servers, no cloud sync, no accounts, and no backend.</p>
+
+<h2>Internet Access</h2>
+<p>DealMichi does not make any network requests to external servers for its core functionality. The only network access occurs when:</p>
+<ul>
+  <li>You manually export/import a JSON backup file (client-side file operations only)</li>
+  <li>You load the app icon from the manifest (same origin)</li>
+</ul>
+
+<h2>Third-Party Services</h2>
+<p>DealMichi uses the following open-source libraries, which run entirely client-side and do not send data anywhere:</p>
+<ul>
+  <li><strong>Dexie.js</strong> — IndexedDB wrapper (<a href="https://dexie.org">dexie.org</a>)</li>
+  <li><strong>Marked</strong> — Markdown parser (<a href="https://marked.js.org">marked.js.org</a>)</li>
+</ul>
+<p>Both libraries are loaded from CDNs during app initialization but do not transmit your data.</p>
+
+<h2>Data Export &amp; Backup</h2>
+<p>You can export all your data as a JSON file at any time using the <strong>Export</strong> button. This is a client-side file download — no data is sent to any server.</p>
+
+<h2>Children's Privacy</h2>
+<p>DealMichi is not directed at children under 13. We do not knowingly collect any information from children.</p>
+
+<h2>Changes to This Policy</h2>
+<p>If this policy changes, the "Last updated" date at the top will be revised. Since the app has no network connectivity to check for updates, please review this page periodically.</p>
+
+<h2>Contact</h2>
+<p>If you have questions about this privacy policy, please open an issue on GitHub:<br>
+<a href="https://github.com/azolkipli-personal/dealmichi">github.com/azolkipli-personal/dealmichi</a></p>
+
+<hr>
+<div class="footer">
+  DealMichi — ディール道<br>
+  Your data stays on your device. Always.
+</div>
+
+</body>
+</html>
