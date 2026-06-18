@@ -450,6 +450,7 @@ body {
     <option value="updated">⚠️ Stale</option>
   </select>
   <span id="dealLimit" style="font-size:0.8em;color:var(--text-muted)">0/3</span>
+  <button class="header-btn icon-btn" id="stagesBtn" title="Manage stages">⚙️</button>
   <button class="header-btn" id="exportBtn"><span>📤</span><span class="label"> Export</span></button>
   <button class="header-btn" id="exportCsvBtn"><span>📊</span><span class="label"> CSV</span></button>
   <button class="header-btn" id="importBtn"><span>📥</span><span class="label"> Import</span></button>
@@ -465,24 +466,7 @@ body {
 </div>
 
 <!-- ── Board ─────────────────────────────────────────────────── -->
-<div class="board" id="board">
-  <div class="column" data-status="active">
-    <div class="column-header"><span>🔄</span> Active <span class="column-count" id="count-active">0</span></div>
-    <div class="column-body" id="col-active"></div>
-  </div>
-  <div class="column" data-status="closing">
-    <div class="column-header"><span>📈</span> Closing <span class="column-count" id="count-closing">0</span></div>
-    <div class="column-body" id="col-closing"></div>
-  </div>
-  <div class="column" data-status="won">
-    <div class="column-header"><span>✅</span> Won <span class="column-count" id="count-won">0</span></div>
-    <div class="column-body" id="col-won"></div>
-  </div>
-  <div class="column" data-status="lost">
-    <div class="column-header"><span>❌</span> Lost <span class="column-count" id="count-lost">0</span></div>
-    <div class="column-body" id="col-lost"></div>
-  </div>
-</div>
+<div class="board" id="board"></div>
 
 <!-- ── Add / Edit Deal Modal ─────────────────────────────────── -->
 <div class="modal-overlay" id="dealModal">
@@ -576,6 +560,21 @@ body {
 
 <input type="file" id="hiddenImportInput" accept=".json" style="display:none">
 
+<!-- ── Stages Editor Modal ──────────────────────────────────── -->
+<div class="modal-overlay" id="stagesModal">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-header"><h2>⚙️ Manage Stages</h2><button class="modal-close" id="stagesClose">✕</button></div>
+    <div class="modal-body" id="stagesBody" style="padding:12px 20px">
+      <!-- Filled by JS -->
+    </div>
+    <div class="modal-footer">
+      <button id="stagesReset" style="margin-right:auto">↩ Reset defaults</button>
+      <button id="stagesCancel">Cancel</button>
+      <button id="stagesSave" class="primary">💾 Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Welcome Modal (first visit) ──────────────────────────── -->
 <div class="welcome-overlay" id="welcomeModal">
   <div class="welcome-modal" id="welcomeModalInner">
@@ -621,10 +620,77 @@ db.version(3).stores({
 // ══════════════════════════════════════════════════════════════
 let deals = [];
 let editingId = null;
+let stages = [];
 
-const STATUSES = ['active', 'closing', 'won', 'lost'];
-const STATUS_LABELS = { active: 'Active', closing: 'Closing', won: 'Won', lost: 'Lost' };
-const STATUS_ICONS = { active: '🔄', closing: '📈', won: '✅', lost: '❌' };
+const DEFAULT_STAGES = [
+  { id: 'active',     label: 'Active',      icon: '🔄' },
+  { id: 'negotiation',label: 'Negotiation',  icon: '💬' },
+  { id: 'closing',    label: 'Closing',      icon: '📈' },
+  { id: 'won',        label: 'Won',          icon: '✅' },
+  { id: 'lost',       label: 'Lost',         icon: '❌' },
+];
+
+function loadStages() {
+  try {
+    const saved = localStorage.getItem('dealmichi-stages');
+    if (saved) { const s = JSON.parse(saved); if (Array.isArray(s) && s.length) return s; }
+  } catch(e) {}
+  return JSON.parse(JSON.stringify(DEFAULT_STAGES));
+}
+function saveStages() { localStorage.setItem('dealmichi-stages', JSON.stringify(stages)); }
+function getStageIds() { return stages.map(s => s.id); }
+function getStageLabel(id) { const s = stages.find(s => s.id === id); return s ? s.label : id; }
+function getStageIcon(id) { const s = stages.find(s => s.id === id); return s ? s.icon : '📋'; }
+
+function openStagesEditor() {
+  renderStagesEditor();
+  document.getElementById('stagesModal').classList.add('open');
+}
+function renderStagesEditor() {
+  const body = document.getElementById('stagesBody');
+  body.innerHTML = stages.map((s, i) => `
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+      <input type="text" class="stage-icon" value="${esc(s.icon)}" style="width:40px;text-align:center;font-size:1.2em" data-idx="${i}" data-field="icon">
+      <input type="text" class="stage-id" value="${esc(s.id)}" style="flex:1;min-width:80px" data-idx="${i}" data-field="id" placeholder="id">
+      <input type="text" class="stage-label" value="${esc(s.label)}" style="flex:2" data-idx="${i}" data-field="label" placeholder="Label">
+      <button class="header-btn icon-btn" data-del="${i}" style="color:var(--red);border-color:var(--red)" title="Remove">✕</button>
+    </div>
+  `).join('') + `
+    <button id="stagesAddBtn" class="header-btn" style="width:100%;margin-top:8px">＋ Add Stage</button>
+  `;
+  // Delete buttons
+  body.querySelectorAll('[data-del]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.dataset.del);
+      if (stages.length <= 2) { toast('Need at least 2 stages'); return; }
+      stages.splice(idx, 1);
+      renderStagesEditor();
+    });
+  });
+  // Add button
+  document.getElementById('stagesAddBtn').addEventListener('click', () => {
+    stages.push({ id: 'stage-' + Date.now(), label: 'New Stage', icon: '📋' });
+    renderStagesEditor();
+  });
+}
+function saveStagesFromEditor() {
+  document.querySelectorAll('.stage-id').forEach(inp => {
+    const idx = parseInt(inp.dataset.idx);
+    if (stages[idx]) stages[idx].id = inp.value.trim() || stages[idx].id;
+  });
+  document.querySelectorAll('.stage-label').forEach(inp => {
+    const idx = parseInt(inp.dataset.idx);
+    if (stages[idx]) stages[idx].label = inp.value.trim() || stages[idx].label;
+  });
+  document.querySelectorAll('.stage-icon').forEach(inp => {
+    const idx = parseInt(inp.dataset.idx);
+    if (stages[idx]) stages[idx].icon = inp.value.trim() || '📋';
+  });
+  saveStages();
+  renderBoard();
+  document.getElementById('stagesModal').classList.remove('open');
+  toast('✅ Stages saved');
+}
 
 // Free tier
 const FREE_DEAL_LIMIT = 3;
@@ -710,7 +776,7 @@ async function createDeal(data) {
     name: data.name.trim(),
     client: (data.client || '').trim(),
     contacts: data.contacts || '',
-    status: 'active',
+    status: getStageIds()[0] || 'active',
     value: data.value || '',
     probability: parseInt(data.prob) || 0,
     expectedClose: data.close || '',
@@ -780,8 +846,8 @@ async function deleteDeal(id) {
 
 async function moveDeal(id, newStatus) {
   const deal = deals.find(d => d.id === id);
-  const oldLabel = deal ? STATUS_LABELS[deal.status] || deal.status : '?';
-  const newLabel = STATUS_LABELS[newStatus] || newStatus;
+  const oldLabel = deal ? getStageLabel(deal.status) : '?';
+  const newLabel = getStageLabel(newStatus);
   const now = new Date();
   const ts = now.toISOString().slice(0, 10) + ' ' + now.toTimeString().slice(0, 5);
   const logEntry = `\n### ${ts}\n- **status changed**: ${oldLabel} → ${newLabel}`;
@@ -796,40 +862,35 @@ async function moveDeal(id, newStatus) {
 // ══════════════════════════════════════════════════════════════
 function renderBoard(filter) {
   const tagVal = document.getElementById('tagFilter')?.value || '';
-  for (const status of STATUSES) {
-    const col = document.getElementById(`col-${status}`);
-    const count = document.getElementById(`count-${status}`);
-    let items = deals.filter(d => d.status === status);
+  const sortBy = document.getElementById('sortBy')?.value || 'created';
+  const board = document.getElementById('board');
+
+  // Build columns from stages
+  board.innerHTML = stages.map(stage => {
+    let items = deals.filter(d => d.status === stage.id);
     // Apply sort
-    const sortBy = document.getElementById('sortBy')?.value || 'created';
     items.sort((a, b) => {
       if (sortBy === 'name') return a.name.localeCompare(b.name);
       if (sortBy === 'value') { const va = parseValueStr(a.value||''); const vb = parseValueStr(b.value||''); return vb - va; }
       if (sortBy === 'updated') return (a.updated||'') < (b.updated||'') ? 1 : -1;
       return (b.created||'') < (a.created||'') ? -1 : 1;
     });
-    // Then sort by sortOrder within this sort for reorder support
-    // (sortOrder is secondary — only applies within same primary sort)
     if (filter) {
       const f = filter.toLowerCase();
-      items = items.filter(d =>
-        d.name.toLowerCase().includes(f) ||
-        (d.client || '').toLowerCase().includes(f) ||
-        (d.summary || '').toLowerCase().includes(f)
-      );
+      items = items.filter(d => d.name.toLowerCase().includes(f) || (d.client||'').toLowerCase().includes(f) || (d.summary||'').toLowerCase().includes(f));
     }
     if (tagVal) {
-      items = items.filter(d => (d.tags || []).some(t => t.toLowerCase() === tagVal.toLowerCase()));
+      items = items.filter(d => (d.tags||[]).some(t => t.toLowerCase() === tagVal.toLowerCase()));
     }
-    count.textContent = items.length;
-
-    if (items.length === 0) {
-      col.innerHTML = `<div class="empty-col">${filter || tagVal ? 'No matches' : 'No deals — tap ＋'}</div>`;
-      continue;
-    }
-
-    col.innerHTML = items.map(d => renderCard(d)).join('');
-  }
+    const bodyHTML = items.length === 0
+      ? `<div class="empty-col">${filter||tagVal ? 'No matches' : 'No deals — tap ＋'}</div>`
+      : items.map(d => renderCard(d)).join('');
+    return `
+      <div class="column" data-status="${stage.id}">
+        <div class="column-header"><span>${stage.icon}</span> ${stage.label} <span class="column-count">${items.length}</span></div>
+        <div class="column-body">${bodyHTML}</div>
+      </div>`;
+  }).join('');
 
   // Update stats bar
   updateStats(filter);
@@ -1128,10 +1189,11 @@ function updateColumnOrder(status) {
       const deal = deals.find(d => d.id === id);
       if (deal) {
         e.preventDefault();
-        const idx = STATUSES.indexOf(deal.status);
-        const nextStatus = STATUSES[(idx + 1) % STATUSES.length];
+        const ids = getStageIds();
+        const idx = ids.indexOf(deal.status);
+        const nextStatus = ids[(idx + 1) % ids.length];
         moveDeal(id, nextStatus);
-        toast(`Moved to ${STATUS_LABELS[nextStatus]}`);
+        toast(`Moved to ${getStageLabel(nextStatus)}`);
       }
     }
     lastTap = now;
@@ -1241,7 +1303,7 @@ function exportCSV() {
   const headers = ['Name','Client','Status','Value','Probability','Expected Close','Summary','Tags','Contacts','Competitors','Next Steps','Created','Updated'];
   const all = deals;
   const rows = all.map(d => [
-    d.name, d.client||'', STATUS_LABELS[d.status]||d.status,
+    d.name, d.client||'', getStageLabel(d.status),
     d.value||'', d.probability||'', d.expectedClose||'',
     d.summary||'', (d.tags||[]).join('; '),
     d.contacts||'', d.competitors||'', d.nextSteps||'',
@@ -1279,7 +1341,7 @@ async function importDeals(file) {
       const clean = {
         name: deal.name || 'Unnamed',
         client: deal.client || '',
-        status: STATUSES.includes(deal.status) ? deal.status : 'active',
+        status: getStageIds().includes(deal.status) ? deal.status : getStageIds()[0] || 'active',
         value: deal.value || '',
         probability: parseInt(deal.probability) || 0,
         expectedClose: deal.expectedClose || '',
@@ -1304,7 +1366,7 @@ async function importDeals(file) {
 function exportDealAsMD(id) {
   const deal = deals.find(d => d.id === id);
   if (!deal) return;
-  const md = `# Deal: ${deal.name}\n\n**Client:** ${deal.client || '—'}\n**Status:** ${STATUS_LABELS[deal.status] || deal.status}\n**Value:** ${deal.value || '—'}\n**Probability:** ${deal.probability}%\n**Expected Close:** ${deal.expectedClose || '—'}\n\n## Summary\n${deal.summary || '—'}\n\n## Notes & Activity\n${deal.notes || '—'}`;
+  const md = `# Deal: ${deal.name}\n\n**Client:** ${deal.client || '—'}\n**Status:** ${getStageLabel(deal.status)}\n**Value:** ${deal.value || '—'}\n**Probability:** ${deal.probability}%\n**Expected Close:** ${deal.expectedClose || '—'}\n\n## Summary\n${deal.summary || '—'}\n\n## Notes & Activity\n${deal.notes || '—'}`;
   const blob = new Blob([md], { type: 'text/markdown' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1581,7 +1643,18 @@ function renderWelcome(lang) {
     });
   });
 
+  // Stages editor
+  document.getElementById('stagesBtn').addEventListener('click', openStagesEditor);
+  document.getElementById('stagesClose').addEventListener('click', () => document.getElementById('stagesModal').classList.remove('open'));
+  document.getElementById('stagesCancel').addEventListener('click', () => document.getElementById('stagesModal').classList.remove('open'));
+  document.getElementById('stagesSave').addEventListener('click', saveStagesFromEditor);
+  document.getElementById('stagesReset').addEventListener('click', () => {
+    stages = JSON.parse(JSON.stringify(DEFAULT_STAGES));
+    renderStagesEditor();
+  });
+
   // Load data
+  stages = loadStages();
   await seedSampleData();
   await loadDeals();
 
